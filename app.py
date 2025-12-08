@@ -1,7 +1,35 @@
 import streamlit as st
-import numpy as np
 import pandas as pd
+import numpy as np
 import joblib
+import os
+import gdown
+
+# -------------------------------------------------
+# Modeli ve feature kolonlarını yükleyen fonksiyon
+# -------------------------------------------------
+@st.cache_resource
+def load_model():
+    """
+    Model dosyası yoksa Google Drive'dan indir,
+    sonra modeli ve feature kolonlarını yükle.
+    """
+    # 1) Google Drive dosya ID (senin paylaştığın linkten)
+    file_id = "1WdRoUATILi2VUCuyOEFAnrpoVJ7t69y-"
+    url = f"https://drive.google.com/uc?id={file_id}"
+
+    # 2) Sunucuda kullanacağımız dosya adı
+    model_path = "cardio_ensemble_model.pkl"
+
+    # 3) Eğer model dosyası yoksa indir
+    if not os.path.exists(model_path):
+        gdown.download(url, model_path, quiet=False)
+
+    # 4) Model ve feature kolonlarını yükle
+    model = joblib.load(model_path)
+    feature_cols = joblib.load("cardio_feature_cols.pkl")
+
+    return model, feature_cols
 
 # ----------------------------------------------------------
 # Model ve feature listesini yükle
