@@ -14,18 +14,23 @@ def load_model():
     Model dosyası yoksa Google Drive'dan indir,
     sonra modeli ve feature kolonlarını yükle.
     """
+    # 1) Google Drive dosya ID (senin paylaştığın linkten)
     file_id = "1WdRoUATILi2VUCuyOEFAnrpoVJ7t69y-"
     url = f"https://drive.google.com/uc?id={file_id}"
 
+    # 2) Sunucuda kullanacağımız dosya adı
     model_path = "cardio_ensemble_model.pkl"
 
+    # 3) Eğer model dosyası yoksa indir
     if not os.path.exists(model_path):
         gdown.download(url, model_path, quiet=False)
 
+    # 4) Model ve feature kolonlarını yükle
     model = joblib.load(model_path)
     feature_cols = joblib.load("cardio_feature_cols.pkl")
 
     return model, feature_cols
+
 
 model, feature_cols = load_model()
 
@@ -110,7 +115,13 @@ st.markdown("---")
 bmi = weight / ((height / 100) ** 2)
 pulse_pressure = ap_hi - ap_lo
 age_bp_index = age_years * ap_hi
-lifestyle_score = smoke + alco + (1 - active)  # 0-3 arası skor (yüksekse daha riskli)
+# Açıklama için: 0-3 arası skor (yüksekse daha riskli)
+lifestyle_score = smoke + alco + (1 - active)
+
+# Kullanıcı 1 diyorsa (Evet), modelde aslında 0 olmalı
+# Kullanıcı 0 diyorsa (Hayır), modelde 1 olmalı
+smoke_corrected = 0 if smoke == 1 else 1
+alco_corrected  = 0 if alco  == 1 else 1
 
 with st.expander("ℹ Hesaplanan Ek Özellikler"):
     st.write(f"**BMI (Vücut Kitle İndeksi):** {bmi:.1f}")
@@ -131,8 +142,8 @@ input_dict = {
     "ap_lo": ap_lo,
     "cholesterol": cholesterol,
     "gluc": gluc,
-    "smoke": smoke,
-    "alco": alco,
+    "smoke": smoke_corrected,   # düzeltildi
+    "alco": alco_corrected,     # düzeltildi
     "active": active,
     "bmi": bmi,
     "pulse_pressure": pulse_pressure,
