@@ -1,360 +1,371 @@
+# -*- coding: utf-8 -*-
 import os
 import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+# İsteğe bağlı: Colab/Cloud ilk kurulumlarda lazımsa aktif et
+try:
+    import gdown  # noqa: F401
+except Exception:
+    # Runtime'da gdown yoksa kur
+    import subprocess, sys
+    subprocess.run([sys.executable, "-m", "pip", "install", "gdown", "-q"], check=False)
 import gdown
 
-# ============================================================
-# Sayfa ayarları ve basit tema dokunuşları
-# ============================================================
+
+# =========================
+# Sayfa Ayarları + Stil
+# =========================
 st.set_page_config(
-    page_title="Kardiyovasküler Hastalık Risk Tahmin Modeli",
+    page_title="Kardiyovasküler Risk Tahmin Modeli",
     page_icon="❤️",
-    layout="wide"
+    layout="wide",
 )
 
-# Basit CSS dokunuşu: slider rengi, başlık boşluğu vb.
+# yumuşak arkaplan, slider rengi, card görünümleri
 st.markdown(
     """
-    <style>
-    /* Genel font boyutları */
-    html, body, [class*="css"]  {
-        font-family: "Segoe UI", sans-serif;
-    }
-    /* Slider rengi */
-    .stSlider > div[data-baseweb="slider"] > div > div {
-        background: linear-gradient(90deg, #ff6b81, #ff9f43);
-    }
-    .stSlider [data-baseweb="thumb"] {
-        box-shadow: 0 0 0 3px rgba(255,107,129,0.25);
-    }
-    /* Kart başlıkları */
-    .card-title {
-        font-weight: 600;
-        font-size: 15px;
-        margin-bottom: 4px;
-    }
-    .small-muted {
-        font-size: 13px;
-        color: #666;
-    }
-    .info-card {
-        padding: 14px 16px;
-        border-radius: 8px;
-        background-color: #f8fafc;
-        border: 1px solid #e3e8f0;
-        margin-bottom: 10px;
-    }
-    </style>
+<style>
+/* Genel font ve arkaplan */
+html, body, [class*="css"]  {
+    font-family: "Inter", "Segoe UI", "Helvetica", Arial, sans-serif;
+}
+
+/* Başlığın üstündeki beyaz boşluğu daralt */
+.block-container { padding-top: 1.2rem; }
+
+/* Sliderları daha yumuşak renk yap */
+.stSlider > div[data-baseweb="slider"] > div > div {
+    background: linear-gradient(90deg, #4fb0ff 0%, #7fd7c5 100%) !important;
+}
+.stSlider > div[data-baseweb="slider"] > div > div > div {
+    background-color: #0ea5e9 !important;
+}
+
+/* Kart (kutu) stili */
+.card {
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    border-radius: 10px;
+    padding: 16px 18px;
+}
+.card h4 {
+    margin: 0 0 8px 0;
+    padding: 0;
+}
+
+/* Küçük bilgi badge'leri */
+.badge {
+    display: inline-block;
+    background: #eef6ff;
+    color: #2563eb;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    border: 1px solid #dbeafe;
+}
+
+/* Sonuç kutularının metinleri biraz daha okunur */
+.result-note {
+    margin-top: 10px;
+    font-size: 14px;
+    color: #374151;
+}
+
+/* Bölüm başlıkları */
+.section-title {
+    font-weight: 700;
+    font-size: 16.5px;
+    margin-bottom: 8px;
+}
+.subtext {
+    font-size: 13.5px; 
+    color: #6b7280;
+}
+</style>
     """,
     unsafe_allow_html=True
 )
 
-# ============================================================
-# Model ve feature kolonlarını yükleme
-# ============================================================
+# =========================
+# Modeli ve kolonları yükle
+# =========================
+DRIVE_FILE_ID = "1WdRoUATILi2VUCuyOEFAnrpoVJ7t69y-"  # cardio_ensemble_model.pkl Google Drive ID
+MODEL_PATH = "cardio_ensemble_model.pkl"
+FEATURE_PATH = "cardio_feature_cols.pkl"  # repo içinde olmalı
 
-@st.cache_resource
-def load_model_and_features():
-    """
-    Model dosyası yoksa Google Drive'dan indirir,
-    sonrasında modeli ve feature kolon listesini yükler.
-    """
-    model_path = "cardio_ensemble_model.pkl"
-    feature_path = "cardio_feature_cols.pkl"
 
-    # Google Drive'dan model indirme (bir kez)
-    if not os.path.exists(model_path):
-        file_id = "1WdRoUATILi2VUCuyOEFAnrpoVJ7t69y-"
-        url = f"https://drive.google.com/uc?id={file_id}"
-        gdown.download(url, model_path, quiet=False)
+@st.cache_resource(show_spinner=True)
+def load_artifacts():
+    """Model ve kolon listesini (feature_cols) yükler. Model yoksa Drive'dan indirir."""
+    # Model yoksa Drive'dan indir
+    if not os.path.exists(MODEL_PATH):
+        url = f"https://drive.google.com/uc?id={DRIVE_FILE_ID}"
+        gdown.download(url, MODEL_PATH, quiet=False)
 
-    model = joblib.load(model_path)
-    feature_cols = joblib.load(feature_path)
-
-    # Her ihtimale karşı listeye dönüştürelim
-    if isinstance(feature_cols, np.ndarray):
-        feature_cols = feature_cols.tolist()
-
+    model = joblib.load(MODEL_PATH)
+    feature_cols = joblib.load(FEATURE_PATH)
     return model, feature_cols
 
 
-model, feature_cols = load_model_and_features()
+model, feature_cols = load_artifacts()
 
-# ============================================================
-# Başlık
-# ============================================================
-
-st.markdown(
+# =========================
+# Yardımcı fonksiyonlar
+# =========================
+def cholesterol_category(total_chol):
     """
-    <h2 style="text-align:center; margin-bottom:4px;">
-        ❤️ Kardiyovasküler Hastalık Risk Tahmin Modeli
-    </h2>
-    <p style="text-align:center; font-size:13px; color:#555; max-width:900px; margin:auto;">
-        Bu web arayüzü, lojistik regresyon, karar ağaçları ve gradient boosting modellerinden
-        oluşan <b>ensemble (topluluk) makine öğrenmesi yaklaşımı</b> ile bireylerin kardiyovasküler
-        hastalık riskini tahmin etmek amacıyla geliştirilmiştir. Model, 70.000 gözlem içeren
-        Cardio Vascular Disease veri seti üzerinde eğitilmiş olup demografik, antropometrik
-        ve klinik değişkenleri kullanmaktadır.
-    </p>
-    <hr style="margin-top:10px; margin-bottom:18px;">
-    """,
-    unsafe_allow_html=True
-)
-
-# ============================================================
-# Ana yerleşim: Sol = girişler, Sağ = açıklama kartları
-# ============================================================
-
-left_col, right_col = st.columns([2.1, 1.3])
-
-# ------------------------------------------------------------
-# SOL KOLON: Kişisel/Klinik Bilgiler + Tahmin + Hesaplanan Özellikler
-# ------------------------------------------------------------
-with left_col:
-    st.subheader("📋 Kişisel ve Klinik Bilgiler")
-
-    c1, c2 = st.columns(2)
-
-    with c1:
-        gender = st.selectbox("Cinsiyet", options=["Kadın", "Erkek"])
-        gender_bin = 0 if gender == "Kadın" else 1
-
-        age_years = st.slider("Yaş (yıl)", 29, 65, 50)
-        height = st.slider("Boy (cm)", 130, 210, 170)
-        weight = st.slider("Kilo (kg)", 40, 150, 75)
-        ap_hi = st.slider("Sistolik Tansiyon (mmHg)", 80, 240, 130)
-        ap_lo = st.slider("Diyastolik Tansiyon (mmHg)", 40, 140, 80)
-
-    with c2:
-        total_chol = st.slider("Total Kolesterol (mg/dL)", 120, 320, 190)
-        fasting_glu = st.slider("Açlık Kan Şekeri (mg/dL)", 70, 250, 95)
-
-        smoke = st.selectbox(
-            "Sigara Kullanımı",
-            options=[0, 1],
-            format_func=lambda x: "Evet" if x == 1 else "Hayır",
-        )
-        alco = st.selectbox(
-            "Alkol Kullanımı",
-            options=[0, 1],
-            format_func=lambda x: "Evet" if x == 1 else "Hayır",
-        )
-        active = st.selectbox(
-            "Fiziksel Aktivite",
-            options=[0, 1],
-            format_func=lambda x: "Aktif (Düzenli)" if x == 1 else "Pasif (Hareketsiz)",
-        )
-
-    # --------------------------------------------------------
-    # Türetilmiş özellikler (BMI, nabız basıncı, indeksler)
-    # --------------------------------------------------------
-    bmi = weight / ((height / 100) ** 2)
-
-    # Kan basıncı kategorisi (basit, literatüre uygun aralıklar)
-    if ap_hi < 120 and ap_lo < 80:
-        bp_cat_str = "Optimal"
-    elif 120 <= ap_hi <= 129 and ap_lo < 80:
-        bp_cat_str = "Yüksek – Normal (sistolik)"
-    elif 130 <= ap_hi <= 139 or 80 <= ap_lo <= 89:
-        bp_cat_str = "1. derece hipertansiyon"
-    elif 140 <= ap_hi <= 159 or 90 <= ap_lo <= 99:
-        bp_cat_str = "2. derece hipertansiyon"
-    elif ap_hi >= 160 or ap_lo >= 100:
-        bp_cat_str = "3. derece hipertansiyon"
+    Literatür eşiği:
+      ≤200 mg/dL -> 1 (Normal)
+      200-239   -> 2 (Sınırda)
+      ≥240      -> 3 (Yüksek)
+    """
+    if total_chol <= 200:
+        return 1
+    elif total_chol < 240:
+        return 2
     else:
-        bp_cat_str = "Sınıflandırılamadı"
+        return 3
 
+
+def glucose_category(fbg):
+    """
+    Açlık Kan Şekeri:
+      70-100   -> 1 (Normal)
+      100-126  -> 2 (Prediyabet)
+      ≥126     -> 3 (Diyabet)
+      (70 altını da klinikte hipoglisemi olarak kabul ederiz, pratikte 1 tutuyoruz.)
+    """
+    if fbg < 100:
+        return 1
+    elif fbg < 126:
+        return 2
+    else:
+        return 3
+
+
+def bp_category(ap_hi, ap_lo):
+    """
+    Basitleştirilmiş tablo:
+    - Optimal     : ap_hi <120 ve ap_lo <80
+    - Normal      : 120–129 / 80–84
+    - Yüksek Norm : 130–139 / 85–89
+    - HT evre-1   : 140–159 / 90–99
+    - HT evre-2   : 160–179 /100–109
+    - HT evre-3   : ≥180 / ≥110
+    Not: Klinik tablolar "ve/veya" geçer; burada daha yalın bir karar ağacı kullanıldı.
+    """
+    if ap_hi < 120 and ap_lo < 80:
+        return "Optimal"
+    if (120 <= ap_hi <= 129) or (80 <= ap_lo <= 84):
+        return "Normal"
+    if (130 <= ap_hi <= 139) or (85 <= ap_lo <= 89):
+        return "Yüksek Normal"
+    if (140 <= ap_hi <= 159) or (90 <= ap_lo <= 99):
+        return "1. derece Hipertansiyon"
+    if (160 <= ap_hi <= 179) or (100 <= ap_lo <= 109):
+        return "2. derece Hipertansiyon"
+    if ap_hi >= 180 or ap_lo >= 110:
+        return "3. derece Hipertansiyon"
+    return "—"
+
+
+def build_input_row(feature_cols, mapping):
+    """
+    Modelin beklediği kolon sırasına göre tek satırlık DataFrame üretir.
+    mapping: {'age_years': val, 'ap_hi': val, ...}
+    """
+    row = []
+    for col in feature_cols:
+        row.append(mapping.get(col, 0))
+    return pd.DataFrame([row], columns=feature_cols)
+
+
+# =========================
+# Üst Başlık
+# =========================
+left, mid, right = st.columns([1, 6, 1])
+with mid:
+    st.markdown(
+        "<h2 style='text-align:center; margin-bottom:2px;'>❤️ Kardiyovasküler Hastalık Risk Tahmin Modeli</h2>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<div class='subtext' style='text-align:center;'>"
+        "Bu web arayüzü; <b>Lojistik Regresyon</b>, <b>Rastgele Orman</b> ve <b>XGBoost</b> tabanlı "
+        "bir <b>ensemble (topluluk)</b> makine öğrenmesi modeli kullanarak bireylerin kardiyovasküler hastalık "
+        "riskini tahmin eder. Model, 70.000 gözlem içeren Cardio Vascular Disease veri seti üzerinde eğitilmiş olup demografik, "
+        "antropometrik ve hemodinamik göstergeleri kullanmaktadır."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# =========================
+# Girdi Alanı
+# =========================
+c_left, c_right = st.columns([1.4, 1])
+
+# ---- Sol: girdiler
+with c_left:
+    st.markdown("<div class='section-title'>📋 Kişisel ve Klinik Bilgiler</div>", unsafe_allow_html=True)
+    sex = st.selectbox("Cinsiyet", ["Kadın", "Erkek"])
+    gender = 1 if sex == "Erkek" else 0  # modelde 'gender' varsa kullanacağız
+
+    age_years = st.slider("Yaş (yıl)", 29, 65, 46)
+    height = st.slider("Boy (cm)", 130, 210, 170)
+    weight = st.slider("Kilo (kg)", 40, 160, 96)
+    ap_hi = st.slider("Sistolik Tansiyon (mmHg)", 80, 240, 130)
+    ap_lo = st.slider("Diyastolik Tansiyon (mmHg)", 40, 180, 80)
+
+    # Sağ tarafta kalan biyokimya ve yaşam tarzı girdileri:
+    st.markdown("<br>", unsafe_allow_html=True)
+    total_chol = st.slider("Total Kolesterol (mg/dL)", 100, 320, 215)
+    fbg = st.slider("Açlık Kan Şekeri (mg/dL)", 70, 250, 113)
+
+    smoke = st.selectbox("Sigara Kullanımı", ["Hayır", "Evet"])
+    alco = st.selectbox("Alkol Kullanımı", ["Hayır", "Evet"])
+    active = st.selectbox("Fiziksel Aktivite", ["Pasif (Hareketsiz)", "Aktif (Düzenli)"])
+
+    # ---- Türetilen göstergeler
+    bmi = weight / ((height / 100) ** 2)
     pulse_pressure = ap_hi - ap_lo
     age_bp_index = age_years * ap_hi
 
-    # Kolesterol kategorisi (mg/dL → 1/2/3)
-    if total_chol <= 200:
-        chol_cat = 1
-        chol_str = "Sağlıklı (≤200 mg/dL)"
-    elif total_chol <= 240:
-        chol_cat = 2
-        chol_str = "Sınırda (200–240 mg/dL)"
-    else:
-        chol_cat = 3
-        chol_str = "Yüksek kolesterol (>240 mg/dL)"
+    # Yaşam tarzı skoru: sigara/alkol/aktif değil -> daha riskli => skor artmalı
+    smoke_r = 1 if smoke == "Evet" else 0
+    alco_r = 1 if alco == "Evet" else 0
+    active_r = 1 if active.startswith("Aktif") else 0
+    lifestyle_score = smoke_r + alco_r + (1 - active_r)  # 0-3 arasında, yüksek = daha riskli
 
-    # Açlık glikoz kategorisi (mg/dL → 1/2/3)
-    if fasting_glu < 100:
-        glu_cat = 1
-        glu_str = "Normal (70–99 mg/dL)"
-    elif fasting_glu < 126:
-        glu_cat = 2
-        glu_str = "Prediyabet (100–125 mg/dL)"
-    else:
-        glu_cat = 3
-        glu_str = "Diyabet (≥126 mg/dL)"
+    # Kategorik eşleştirmeler (model 1/2/3 bekliyorsa)
+    chol_cat = cholesterol_category(total_chol)
+    gluc_cat = glucose_category(fbg)
+    bp_cat_text = bp_category(ap_hi, ap_lo)
 
-    # Yaşam tarzı skoru: 0 = en kötü, 3 = en iyi
-    # sigara(1) + alkol(1) + hareketsizlik(1) arttıkça skor azalıyor
-    risky_behaviours = smoke + alco + (1 - active)
-    lifestyle_score = 3 - risky_behaviours
-    lifestyle_score = max(0, min(3, lifestyle_score))
-
-    # --------------------------------------------------------
-    # Modelin beklediği girdi vektörünü hazırlama
-    # (feature_cols sırasına göre dolduruyoruz)
-    # --------------------------------------------------------
-    raw_features = {
-        "age_years": age_years,
-        "gender": gender_bin,
-        "height": height,
-        "weight": weight,
-        "ap_hi": ap_hi,
-        "ap_lo": ap_lo,
-        "cholesterol": chol_cat,  # modele kategori gidiyor
-        "gluc": glu_cat,          # modele kategori gidiyor
-        "smoke": smoke,
-        "alco": alco,
-        "active": active,
-        "bmi": bmi,
-        "pulse_pressure": pulse_pressure,
-        "age_bp_index": age_bp_index,
-        "lifestyle_score": lifestyle_score,
-    }
-
-    input_row = [raw_features.get(col, 0) for col in feature_cols]
-    input_df = pd.DataFrame([input_row], columns=feature_cols)
-
-    # --------------------------------------------------------
-    # Tahmin butonu ve kullanıcıya rehber metin
-    # --------------------------------------------------------
+    # ---- Tahmin butonu (ek özelliklerden önce)
     st.markdown(
         """
-        <div style='margin-top:6px; padding:10px; background:#eef6ff;
-                    border-left:4px solid #5b9bff; border-radius:4px;
-                    font-size:13px;'>
-        ℹ️ <b>Not:</b> Tüm bilgileri girdikten sonra aşağıdaki butona basarak,
-        bireyin kardiyovasküler hastalık risk tahminini hesaplayınız.
+        <div style='margin-top: 8px; padding:10px; background:#eef6ff; border-left:4px solid #5b9bff; border-radius:6px;'>
+        ℹ️ <b>Not:</b> Tüm değerleri girdikten sonra aşağıdaki butona basarak kardiyovasküler risk tahmininizi hesaplayabilirsiniz.
         </div>
         """,
         unsafe_allow_html=True
     )
-
     predict_btn = st.button("🔍 Kardiyovasküler Risk Tahminini Hesapla")
 
-    if not predict_btn:
-        st.info("Henüz tahmin yapılmadı. Lütfen bilgileri girip butona tıklayınız.")
+    # ---- Ek Özellikler (expandable)
+    with st.expander("ℹ️ Hesaplanan Ek Özellikler"):
+        st.markdown(
+            f"- <b>Vücut Kitle İndeksi (BMI):</b> {bmi:.1f} kg/m²  "
+            f"{'(18.5–24.9: normal, 25–29.9: fazla kilolu, 30+: obezite)'}  \n"
+            f"- <b>Nabız Basıncı (ap_hi - ap_lo):</b> {pulse_pressure} mmHg  \n"
+            f"- <b>Yaş × Sistolik Tansiyon İndeksi:</b> {age_bp_index}  \n"
+            f"- <b>Kan Basıncı Kategorisi:</b> {bp_cat_text}  \n"
+            f"- <b>Yaşam Tarzı Skoru (0–3; yüksek skor = daha riskli):</b> {lifestyle_score}",
+            unsafe_allow_html=True
+        )
+
+# ---- Sağ: açıklama kutuları (kutu içinde ve sıralı)
+with c_right:
+    st.markdown("<div class='card'><h4>📚 Kullanılan Veri Seti</h4>", unsafe_allow_html=True)
+    st.markdown(
+        "- **Kaynak:** Cardio Vascular Disease veri seti  \n"
+        "- **Gözlem Sayısı:** ~70.000 birey  \n"
+        "- **Değişkenler:** Yaş, cinsiyet, boy, kilo, kan basıncı (sistolik/diyastolik), kolesterol, glikoz, sigara, alkol, fiziksel aktivite vb.  \n"
+        "- **Hedef Değişken:** `cardio` (0 = hastalık yok, 1 = kardiyovasküler hastalık var)",
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='card'><h4>🧪 Veri Ön İşleme</h4>", unsafe_allow_html=True)
+    st.markdown(
+        "- Aykırı ve tutarsız değerler (ör. klinik olarak uyumsuz tansiyon/kilo/boy kombinasyonları) veri keşif aşamasında incelenerek uygun şekilde filtrelendi.  \n"
+        "- Eksik değerler için uygun yöntemler ve/veya istatistiksel yaklaşımlar kullanıldı.  \n"
+        "- Sürekli değişkenler gerektiğinde ölçeklendirildi; kategorik değişkenler için uygun kodlama yapıldı.",
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='card'><h4>🧠 Kullanılan Modeller</h4>", unsafe_allow_html=True)
+    st.markdown(
+        "- Lojistik Regresyon  \n"
+        "- Karar Ağaçları / Rastgele Orman  \n"
+        "- XGBoost (gradient boosting)  \n"
+        "  \n"
+        "Bu üç model, bir <b>Ensemble (Topluluk) Modeli</b> içerisinde birleştirilmiştir (olasılıkların ağırlıklı/çoğunluk oylaması).",
+        unsafe_allow_html=True
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='card'><h4>📈 Eğitim Performansı (Test Kümesi)</h4>", unsafe_allow_html=True)
+    st.markdown(
+        "- **Doğruluk (Accuracy):** ~0.74  \n"
+        "- **Duyarlılık (Recall):** ~0.70  \n"
+        "- **F1-Skoru:** ~0.72  \n"
+        "- **ROC-AUC:** ~0.80  \n"
+        "<span class='subtext'>*Not*: Metrikler, modelin sınıflar arasındaki ayırımı test kümesi üzerinde anlamlı bir düzeyde öğrendiğini göstermektedir.</span>",
+        unsafe_allow_html=True
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# =========================
+# Tahmin – mapping & sonuç
+# =========================
+
+# Modelin beklediği isimleri -> girdiler/hesaplananlar
+name_to_value = {
+    "gender": gender,
+    "age_years": age_years,
+    "height": height,
+    "weight": weight,
+    "ap_hi": ap_hi,
+    "ap_lo": ap_lo,
+    "cholesterol": chol_cat,   # 1/2/3 (Normal / Sınırda / Yüksek)
+    "gluc": gluc_cat,          # 1/2/3 (Normal / Prediyabet / Diyabet)
+    "smoke": smoke_r,          # 0/1
+    "alco": alco_r,            # 0/1
+    "active": active_r,        # 0/1 (Aktif=1)
+    "bmi": float(bmi),
+    "pulse_pressure": int(pulse_pressure),
+    "age_bp_index": int(age_bp_index),
+    "lifestyle_score": int(lifestyle_score),  # yüksek = daha riskli (düzeltildi)
+    # Eğer modelde farklı mühendislikli alanlar varsa buraya ekleyebilirsin.
+}
+
+# Butona basılmadıysa bilgilendirme kutusu
+if not predict_btn:
+    st.info("Henüz tahmin yapılmadı. Lütfen bilgileri girip ‘Kardiyovasküler Risk Tahminini Hesapla’ butonuna tıklayınız.")
+else:
+    # Modelin beklediği sırada tek satırlık dataframe
+    input_df = build_input_row(feature_cols, name_to_value)
+
+    # Olasılık ve sınıf
+    prob = model.predict_proba(input_df)[0][1]  # cardio=1 (hastalık) olasılığı
+    pred = int(model.predict(input_df)[0])
+    risk_pct = prob * 100
+
+    if pred == 1:
+        st.error(
+            f"⚠️ <b>YÜKSEK RİSK:</b> Model, bu bireyin kardiyovasküler hastalık geliştirme olasılığını "
+            f"yaklaşık <b>%{risk_pct:.1f}</b> olarak tahmin etmektedir.",
+            unsafe_allow_html=True,
+        )
     else:
-        prob = model.predict_proba(input_df)[0][1]
-        pred = model.predict(input_df)[0]
-        risk_yuzde = prob * 100
-
-        if pred == 1:
-            st.error(
-                f"⚠️ YÜKSEK RİSK: Model, bu bireyin kardiyovasküler hastalık "
-                f"geliştirme olasılığını yaklaşık %{risk_yuzde:.1f} olarak tahmin etmektedir."
-            )
-        else:
-            st.success(
-                f"✅ DÜŞÜK RİSK: Model, bu bireyin kardiyovasküler hastalık "
-                f"geliştirme olasılığını yaklaşık %{risk_yuzde:.1f} olarak tahmin etmektedir."
-            )
-
-        st.markdown(
-            """
-            <div style='margin-top:10px; font-size:13px;'>
-            <b>Teknik Açıklama:</b> Tahmin, eğitim veri seti üzerinde oluşturulan topluluk
-            modelinin sınıf olasılık dağılımına dayalıdır. Çıktı, klinik karar sürecini
-            desteklemek amacıyla tasarlanmış bir <i>karar destek sistemi</i> ürünüdür;
-            tek başına tanı koymak veya tedavi planlamak için kullanılmamalıdır.
-            </div>
-            """,
-            unsafe_allow_html=True
+        st.success(
+            f"✅ <b>DÜŞÜK RİSK:</b> Model, bu bireyin kardiyovasküler hastalık geliştirme olasılığını "
+            f"yaklaşık <b>%{risk_pct:.1f}</b> olarak tahmin etmektedir.",
+            unsafe_allow_html=True,
         )
 
-    # --------------------------------------------------------
-    # Hesaplanan ek özellikler
-    # --------------------------------------------------------
-    with st.expander("ℹ Hesaplanan Ek Özellikler", expanded=True):
-        st.markdown(
-            f"""
-            - **Vücut Kitle İndeksi (BMI):** {bmi:.1f} kg/m²  
-            - **Nabız Basıncı (ap_hi - ap_lo):** {pulse_pressure:.0f} mmHg  
-            - **Yaş × Sistolik Tansiyon İndeksi:** {age_bp_index:.0f}  
-            - **Yaşam Tarzı Skoru (0–3, yüksek skor daha sağlıklı):** {lifestyle_score:.0f}  
-            - **Kan Basıncı Durumu:** {bp_cat_str}  
-            - **Kolesterol Durumu:** {chol_str}  
-            - **Açlık Kan Şekeri Durumu:** {glu_str}
-            """,
-            unsafe_allow_html=True
-        )
-
-# ------------------------------------------------------------
-# SAĞ KOLON: Veri seti, veri ön işleme, modeller, performans
-# ------------------------------------------------------------
-with right_col:
-    # Kullanılan veri seti
     st.markdown(
         """
-        <div class="info-card">
-          <div class="card-title">📊 Kullanılan Veri Seti</div>
-          <div class="small-muted">
-            <b>Kaynak:</b> Cardio Vascular Disease veri seti (≈70.000 gözlem).<br>
-            <b>Değişkenler:</b> yaş, cinsiyet, boy, kilo, kan basıncı, kolesterol, açlık glikozu,
-            sigara kullanımı, alkol kullanımı, fiziksel aktivite.<br>
-            <b>Hedef değişken:</b> <code>cardio</code> (0 = hastalık yok, 1 = kardiyovasküler hastalık var).
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # Veri ön işleme
-    st.markdown(
-        """
-        <div class="info-card">
-          <div class="card-title">🧪 Veri Ön İşleme</div>
-          <div class="small-muted">
-            • Aykırı ve tutarsız değerler (özellikle kan basıncı kombinasyonları) klinik
-            literatür ışığında incelenmiş ve uç değerler elenmiştir.<br>
-            • Eksik veya hatalı kayıtlar için basit imputasyon teknikleri kullanılmıştır.<br>
-            • Sürekli değişkenler gerektiğinde ölçeklendirilmiş, kategorik değişkenler
-            ikili/ordinal formata dönüştürülmüştür.<br>
-            • Özellik mühendisliği kapsamında BMI, nabız basıncı, yaş×tansiyon indeksi ve
-            yaşam tarzı skoru gibi türetilmiş değişkenler eklenmiştir.
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # Kullanılan modeller
-    st.markdown(
-        """
-        <div class="info-card">
-          <div class="card-title">🤖 Kullanılan Modeller</div>
-          <div class="small-muted">
-            • Lojistik Regresyon<br>
-            • Karar Ağaçları / Random Forest<br>
-            • Gradient Boosting (XGBoost benzeri yapı)<br><br>
-            Bu modeller, <b>ensemble (topluluk)</b> yaklaşımı ile birleştirilmiş; her modelin
-            tahmin olasılıkları ağırlıklandırılarak son karar için ortalaması alınmıştır.
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # Eğitim performansı
-    st.markdown(
-        """
-        <div class="info-card">
-          <div class="card-title">📈 Eğitim Performansı (Test Kümesi)</div>
-          <div class="small-muted">
-            • Doğruluk (Accuracy): ≈ 0.74<br>
-            • Duyarlılık (Recall): ≈ 0.70 (hastalığı olan bireyi yakalama oranı)<br>
-            • F1 Skoru: ≈ 0.72 (dengeli hata ölçütü)<br>
-            • ROC-AUC: ≈ 0.80 (ayırma gücü)<br><br>
-            Bu değerler, modelin sınıflar arasındaki ayrımı istatistiksel olarak anlamlı
-            bir düzeyde öğrendiğini göstermektedir.
-          </div>
+        <div class='result-note'>
+        <b>Teknik Açıklama:</b> Olasılık, eğitim veri setinde oluşturulan topluluk modelinin,
+        gözleme benzer bireylerin sınıf dağılımına dayalı tahminidir. Bu çıktı; klinik kararı desteklemek için
+        tasarlanmış bir karar destek sistemidir; <u>tek başına tanı koymak veya tedavi planlamak için kullanılmamalıdır</u>.
         </div>
         """,
         unsafe_allow_html=True
