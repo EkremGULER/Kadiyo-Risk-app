@@ -136,7 +136,8 @@ def load_model():
 
     return model, feature_cols
 
-st.code(feature_cols)
+
+model, feature_cols = load_model()
 
 # =========================================================
 # BAŞLIK VE GENEL AÇIKLAMA
