@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
-import gdown # Model dosyalarını indirmek için gereklidir
+import gdown # Google Drive'dan model dosyalarını indirmek için
 
 # =========================================================
 # SAYFA AYARLARI
@@ -57,40 +57,40 @@ st.markdown(
 def load_model():
     """
     Model ve feature listesi dosyalarının güvenli bir şekilde indirilip yüklendiği fonksiyon.
-    Erişim hatası durumunda uygulamayı durdurur.
+    ID'ler kontrol edilir ve erişim hatası durumunda uygulama durdurulur.
     """
     
-    # DİKKAT: BU ID'LERİ KENDİ GOOGLE DRIVE DOSYA ID'LERİNİZLE DEĞİŞTİRİNİZ!
-    # Eğer bu ID'ler doğru değilse uygulama çalışmayacaktır.
+    # !!! BURAYA KENDİ GOOGLE DRIVE ID'LERİNİZİ GİRİNİZ !!!
     MODEL_FILE_ID = "YOUR_MODEL_DRIVE_ID_HERE" 
     FEATURE_FILE_ID = "YOUR_FEATURE_LIST_DRIVE_ID_HERE"
     
     MODEL_PATH = "cardio_ensemble_model.pkl"
     FEATURE_PATH = "cardio_feature_cols.pkl"
 
+    # ID kontrolü (Hata 3 çözümü)
     if MODEL_FILE_ID == "YOUR_MODEL_DRIVE_ID_HERE" or FEATURE_FILE_ID == "YOUR_FEATURE_LIST_DRIVE_ID_HERE":
         st.error("❌ KRİTİK HATA: Lütfen 'load_model' fonksiyonundaki MODEL_FILE_ID ve FEATURE_FILE_ID değişkenlerini kendi Google Drive ID'lerinizle değiştiriniz.")
         st.stop()
         
     try:
-        # Model İndirme ve Yükleme
+        # Model ve Feature Listesi İndirme
         if not os.path.exists(MODEL_PATH):
             st.warning("Model dosyası sunucuda bulunamadı. Google Drive'dan indiriliyor...")
             gdown.download(f"https://drive.google.com/uc?id={MODEL_FILE_ID}", MODEL_PATH, quiet=True)
 
-        # Feature Listesi İndirme ve Yükleme
         if not os.path.exists(FEATURE_PATH):
             st.warning("Feature listesi dosyası sunucuda bulunamadı. Google Drive'dan indiriliyor...")
             gdown.download(f"https://drive.google.com/uc?id={FEATURE_FILE_ID}", FEATURE_PATH, quiet=True)
 
         
+        # Dosyaların Yüklenebilirliğini Kontrol Etme
         if os.path.exists(MODEL_PATH) and os.path.exists(FEATURE_PATH):
             model = joblib.load(MODEL_PATH)
             feature_cols = joblib.load(FEATURE_PATH)
             st.info("✅ Model ve özellikler başarıyla yüklendi.")
             return model, feature_cols
         else:
-            st.error("❌ Model veya özellik dosyaları bulunamadı (İndirme başarısız oldu). Lütfen dosya adlarını ve Drive ID'lerini kontrol edin.")
+            st.error("❌ Model veya özellik dosyaları bulunamadı. Lütfen dosya adlarını ve Drive ID'lerini kontrol edin.")
             st.stop()
     
     except Exception as e:
@@ -102,7 +102,6 @@ model, feature_cols = load_model()
 # =========================================================
 # 2. YARDIMCI KLİNİK FONKSİYONLAR
 # =========================================================
-# Olası Naive Bayes veya basit Lojistik Regresyon modellerinin beklediği kategorik dönüşümler
 def chol_category(total_chol):
     if total_chol <= 200: return 1
     elif total_chol <= 240: return 2
@@ -142,7 +141,6 @@ st.markdown("---")
 # =========================================================
 # 4. KULLANICI GİRDİLERİ
 # =========================================================
-# Model yüklenemezse bu kısım çalışmaz, uygulama durur.
 left_col, right_col = st.columns([1.5, 1.0])
 
 with left_col:
@@ -151,7 +149,7 @@ with left_col:
     c1, c2 = st.columns(2)
 
     with c1:
-        # Cinsiyet (Veri setine göre 1=Kadın, 2=Erkek)
+        # Cinsiyet (Veri setine göre 1=Kadın, 2=Erkek varsayımı)
         gender_map = {"Kadın": 1, "Erkek": 2}
         gender_ui = st.selectbox("Cinsiyet", options=["Kadın", "Erkek"])
         gender_model = gender_map[gender_ui]
@@ -202,14 +200,12 @@ with left_col:
         "lifestyle_score": lifestyle_score, "gender": gender_model 
     }
     
-    # SADECE feature_cols listesindeki özellikler modele gönderilir (NameError çözümü)
-    # Bu filtreleme sayesinde feature_cols'da 'gender' olmasa bile kod çökmez.
+    # NameError Çözümü: YALNIZCA modelin beklediği özellikler (feature_cols) filtrelenerek gönderilir.
     input_data = {col: all_input_dict[col] for col in feature_cols if col in all_input_dict}
 
-    # Modelin beklediği özellik listesi ile kullanıcıdan alınan verileri karşılaştırma
+    # Modelin beklediği tüm özellikler gelmemişse uyarı verilir.
     if len(input_data) != len(feature_cols):
-        missing_features = set(feature_cols) - set(input_data.keys())
-        st.warning(f"⚠️ **Modelin beklediği bazı önemli özellikler eksik.** (Örn: {list(missing_features)[:2]}) Bu, tahminin doğruluğunu azaltabilir.")
+        st.warning("⚠️ Modelin beklediği bazı önemli özellikler eksik. Tahmin doğruluğu etkilenebilir.")
     
     # DataFrame oluşturma (Modelin beklediği sırayı korur)
     input_df = pd.DataFrame([[input_data[col] for col in feature_cols]], columns=feature_cols)
@@ -218,7 +214,7 @@ with left_col:
     # TAHMİN BUTONU (ANALİZ ETME TUŞU) VE ÇIKTI
     # -----------------------------------------------------
     st.markdown("<br>", unsafe_allow_html=True)
-    predict_btn = st.button("🚀 Kardiyovasküler Risk Tahminini Hesapla", key="main_button")
+    predict_btn = st.button("🚀 Kardiyovasküler Risk Tahminini Hesapla (Analiz Et)", key="main_button")
     st.markdown("<br>", unsafe_allow_html=True)
 
     if predict_btn:
@@ -308,7 +304,7 @@ with right_col:
                 <li><b>ROC-AUC:</b> ≈ 0.80. Modelin, hastalığı doğru bir şekilde ayırt etme yeteneği yüksektir.</li>
                 <li><b>Duyarlılık (Recall):</b> ≈ 0.70. Hastalığı gerçekten olan bireyleri tespit etme başarısı, erken müdahale açısından önemlidir.</li>
             </ul>
-            <small>Bu metrikler, modelin klinik veriler üzerinde istatistiksel olarak anlamlı bir performans sergilediğini ve yarışma için güçlü bir aday olduğunu göstermektedir.</small>
+            <small>Bu metrikler, modelin klinik veriler üzerinde istatistiksel olarak anlamlı bir performans sergilediğini göstermektedir.</small>
         </div>
         """,
         unsafe_allow_html=True,
