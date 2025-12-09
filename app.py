@@ -54,27 +54,25 @@ body {
 # -------------------------------------------------
 # 📌 MODEL YÜKLEME (LOCAL + DRIVE FALLBACK)
 # -------------------------------------------------
+import os
+import joblib
+import streamlit as st
+import pandas as pd
+import numpy as np
+
+# Model yükleme
 @st.cache_resource
 def load_model():
-    """
-    Model ve feature listesi:
-    - Model: Kardiyovasküler hastalık (cardio=0/1) için ensemble sınıflandırıcı
-    - feature_cols: Eğitimde kullanılan kolon isimleri
-    """
-    file_id = "1WdRoUATILi2VUCuyOEFAnrpoVJ7t69y-"
-    url = f"https://drive.google.com/uc?id={file_id}"
+    base_path = os.path.dirname(__file__)  # şu anki dizin
+    model_path = os.path.join(base_path, "cardio_ensemble_model.pkl")
+    feature_path = os.path.join(base_path, "cardio_feature_cols.pkl")
 
-    model_path = "cardio_ensemble_model.pkl"
-
-    # Model dosyası yoksa Google Drive'dan indir
-    if not os.path.exists(model_path):
-        gdown.download(url, model_path, quiet=False)
-
-    model = joblib.load("cardio_ensemble_model.pkl")
-    feature_cols = joblib.load("cardio_feature_cols.pkl")
+    model = joblib.load(model_path)
+    feature_cols = joblib.load(feature_path)
     return model, feature_cols
 
 model, feature_cols = load_model()
+
 
 # ------------------------------------------
 # 🎯 SAYFA BAŞLIĞI ve TEKNİK AÇIKLAMA
