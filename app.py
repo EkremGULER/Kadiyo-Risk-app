@@ -138,9 +138,6 @@ def load_model():
 
 st.code(feature_cols)
 
-
-model, feature_cols = load_model()
-
 # =========================================================
 # BAŞLIK VE GENEL AÇIKLAMA
 # =========================================================
