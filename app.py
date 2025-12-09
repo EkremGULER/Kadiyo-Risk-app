@@ -1,4 +1,3 @@
-%%writefile app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -55,13 +54,12 @@ st.markdown(
 @st.cache_resource
 def load_model():
     """
-    Eğer dosyalar yoksa Google Drive'dan indirır, ardından model ve feature listesini yükler.
-    Model ve Feature listesini tek bir fonksiyonda indirmek/yüklemek daha güvenlidir.
+    Eğer dosyalar yoksa Google Drive'dan indirir, ardından model ve feature listesini yükler.
     """
     
-    # Google Drive ID'leriniz (Örnek ID'ler - Değiştirilmeli)
-    MODEL_FILE_ID = "1WdRoUATILi2VUCuyOEFAnrpoVJ7t69y-" 
-    FEATURE_FILE_ID = "1h_VnL-B3i5uT-D9iF-XoE7jP9oA2fGhG" # Farazi ID
+    # !!! BURAYI KENDİ GOOGLE DRIVE ID'LERİNİZLE DOLDURUNUZ !!!
+    MODEL_FILE_ID = "YOUR_MODEL_DRIVE_ID_HERE" 
+    FEATURE_FILE_ID = "YOUR_FEATURE_LIST_DRIVE_ID_HERE"
     
     MODEL_PATH = "cardio_ensemble_model.pkl"
     FEATURE_PATH = "cardio_feature_cols.pkl"
@@ -83,15 +81,14 @@ def load_model():
         return model, feature_cols
     
     except Exception as e:
-        st.error(f"❌ Model veya özellikler yüklenirken kritik bir hata oluştu: {e}")
-        st.stop() # Hata durumunda uygulamayı durdur
+        st.error(f"❌ Model veya özellikler yüklenirken kritik bir hata oluştu: {e}. Lütfen Drive ID'lerini ve dosya adlarını kontrol edin.")
+        st.stop() 
 
 model, feature_cols = load_model()
 
 # =========================================================
 # YARDIMCI FONKSİYONLAR
 # =========================================================
-# (Orijinal koddaki chol_category ve gluc_category fonksiyonları buraya taşınır)
 def chol_category(total_chol):
     if total_chol <= 200: return 1
     elif total_chol <= 240: return 2
@@ -143,13 +140,13 @@ with left_col:
     c1, c2 = st.columns(2)
 
     with c1:
-        # Cinsiyet: Modelin beklediği kodlama (Örnek: 1=Kadın, 2=Erkek, VEYA 0=Kadın, 1=Erkek)
-        # Veri setine göre düzeltme yapılmalıdır. Varsayımsal olarak 1 ve 2 kullanıyorum.
+        # Cinsiyet: Modelin beklediği kodlama (Örnek: 1=Kadın, 2=Erkek)
+        # Modelinizin beklediği koda göre bu kısmı kontrol edin!
         gender_map = {"Kadın": 1, "Erkek": 2}
         gender_ui = st.selectbox("Cinsiyet", options=["Kadın", "Erkek"])
         gender_model = gender_map[gender_ui]
         
-        age_years = st.slider("Yaş (yıl)", 29, 70, 50) # Yaş aralığı biraz genişletildi
+        age_years = st.slider("Yaş (yıl)", 29, 70, 50) 
         height = st.slider("Boy (cm)", 130, 210, 170)
         weight = st.slider("Kilo (kg)", 40, 150, 75)
     
@@ -211,13 +208,14 @@ with left_col:
     }
     
     # Modelin beklediği sırayı koruyarak DataFrame oluşturma
-    # Not: Eğer feature_cols'da 'gender' yoksa bu kısım hata verir. feature_cols modelde olmalı.
+    # Cinsiyet değişkeni feature_cols içinde olmalıdır.
     if 'gender' in feature_cols:
         input_df = pd.DataFrame([[input_dict[col] for col in feature_cols]], columns=feature_cols)
     else:
-        st.error("Modelin beklediği özellik listesinde 'gender' değişkeni bulunamadı. Lütfen modelinizi kontrol edin.")
-        st.stop()
-
+        # Eğer 'gender' özelliği feature_cols listesinde yoksa model tahmin yapamaz.
+        # Bu hata, load_model() içinde kontrol edilemez, kullanıcı girdisinde görünür.
+        st.error(f"Modelin beklediği özellik listesinde 'gender' değişkeni bulunamadı. Feature listesi ({FEATURE_PATH}) kontrol edilmelidir.")
+        input_df = None # Hata durumunda tahmin yapmayı engelle
 
     # -----------------------------------------------------
     # TAHMİN BUTONU VE ÇIKTI
@@ -226,7 +224,7 @@ with left_col:
     predict_btn = st.button("🚀 Kardiyovasküler Risk Tahminini Hesapla")
     st.markdown("")
 
-    if predict_btn:
+    if predict_btn and input_df is not None:
         prob = model.predict_proba(input_df)[0][1]
         risk_yuzde = prob * 100
 
@@ -259,7 +257,7 @@ with left_col:
         )
 
 # =========================================================
-# SAĞ SÜTUN: BİLGİ KARTLARI (Yarışma için detaylandırıldı)
+# SAĞ SÜTUN: BİLGİ KARTLARI
 # =========================================================
 with right_col:
     st.subheader("📚 Teknik ve Klinik Bilgiler")
@@ -313,9 +311,8 @@ with right_col:
             <h4>📈 Model Performansı (Test Seti)</h4>
             <ul>
                 <li><b>ROC-AUC:</b> ≈ 0.80. Bu, modelin hastalık olanları olmayanlardan ayırt etme yeteneğinin güçlü olduğunu gösterir.</li>
-                <li><b>Duyarlılık (Recall, Sınıf 1):</b> ≈ 0.70. Hastalığı olan 10 kişiden 7'sini doğru tahmin ettiğimiz anlamına gelir, bu da önleyici tıp için önemli bir metriktir.</li>
+                <li><b>Duyarlılık (Recall, Sınıf 1):</b> ≈ 0.70. Hastalığı olan 10 kişiden 7'sini doğru tahmin ettiğimiz anlamına gelir.</li>
             </ul>
-            
         </div>
         """,
         unsafe_allow_html=True,
