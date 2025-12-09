@@ -48,12 +48,12 @@ st.title("🫀 Kardiyovasküler Hastalık Risk Tahmin Modeli")
 
 st.write(
     """
-    Bu uygulama, *Lojistik Regresyon + Random Forest + XGBoost*
-    modellerinden oluşan bir *Ensemble (Topluluk) Yapay Zekâ Modeli* ile
+    Bu uygulama, **Lojistik Regresyon + Random Forest + XGBoost**
+    modellerinden oluşan bir **Ensemble (Topluluk) Yapay Zekâ Modeli** ile
     kardiyovasküler hastalık riskini tahmin eder.
     
     Kullanılan veri seti, 70.000'den fazla bireyin demografik ve klinik
-    özelliklerini içeren *Cardio Vascular Disease* veri setidir.
+    özelliklerini içeren **Cardio Vascular Disease** veri setidir.
     """
 )
 
@@ -189,28 +189,28 @@ alco_corrected = 0 if alco == 1 else 1
 # Hesaplanan ek özellikleri göster
 # -------------------------------------------------
 with st.expander("ℹ Hesaplanan Ek Özellikler ve Kategoriler"):
-    st.write(f"*BMI (Vücut Kitle İndeksi):* {bmi:.1f} kg/m² — {bmi_cat}")
+    st.write(f"**BMI (Vücut Kitle İndeksi):** {bmi:.1f} kg/m² — _{bmi_cat}_")
     st.write(
-        f"*Kolesterol Kategorisi:* {chol_txt} "
+        f"**Kolesterol Kategorisi:** {chol_txt} "
         f"(modele giden değer: {cholesterol_cat})"
     )
     st.write(
-        f"*Glukoz Kategorisi:* {gluc_txt} "
+        f"**Glukoz Kategorisi:** {gluc_txt} "
         f"(modele giden değer: {gluc_cat})"
     )
-    st.write(f"*Nabız Basıncı (ap_hi - ap_lo):* {pulse_pressure} mmHg")
-    st.write(f"*Tansiyon Kategorisi:* {bp_cat}")
-    st.write(f"*Yaş x Tansiyon İndeksi:* {age_bp_index}")
+    st.write(f"**Nabız Basıncı (ap_hi - ap_lo):** {pulse_pressure} mmHg")
+    st.write(f"**Tansiyon Kategorisi:** {bp_cat}")
+    st.write(f"**Yaş x Tansiyon İndeksi:** {age_bp_index}")
     st.write(
-        f"*Yaşam Tarzı Skoru (0-3):* {lifestyle_score} "
+        f"**Yaşam Tarzı Skoru (0-3):** {lifestyle_score} "
         f"(yüksek skor = daha riskli profil)"
     )
     st.write(
-        f"*Sigara (modele giden):* {smoke_corrected} "
+        f"**Sigara (modele giden):** {smoke_corrected} "
         f"— 0: içiyor, 1: içmiyor"
     )
     st.write(
-        f"*Alkol (modele giden):* {alco_corrected} "
+        f"**Alkol (modele giden):** {alco_corrected} "
         f"— 0: kullanıyor, 1: kullanmıyor"
     )
 
@@ -251,17 +251,17 @@ if st.button("🔍 Kardiyovasküler Risk Tahminini Hesapla"):
 
     if pred == 1:
         st.error(
-            f"⚠ *YÜKSEK RİSK:* Model bu kişinin kardiyovasküler hastalık riskini "
-            f"yaklaşık *%{risk_yuzde:.1f}* olarak tahmin ediyor."
+            f"⚠ **YÜKSEK RİSK:** Model bu kişinin kardiyovasküler hastalık riskini "
+            f"yaklaşık **%{risk_yuzde:.1f}** olarak tahmin ediyor."
         )
     else:
         st.success(
-            f"✅ *DÜŞÜK RİSK:* Model bu kişinin kardiyovasküler hastalık riskini "
-            f"yaklaşık *%{risk_yuzde:.1f}* olarak tahmin ediyor."
+            f"✅ **DÜŞÜK RİSK:** Model bu kişinin kardiyovasküler hastalık riskini "
+            f"yaklaşık **%{risk_yuzde:.1f}** olarak tahmin ediyor."
         )
 
     st.markdown(
-        "> *Not:* Bu model, klinik kararı desteklemek için tasarlanmış bir "
+        "> **Not:** Bu model, klinik kararı desteklemek için tasarlanmış bir "
         "karar destek sistemidir. Tek başına tıbbi tanı veya tedavi kararında "
         "kullanılmamalıdır."
     )
