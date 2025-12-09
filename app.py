@@ -39,10 +39,11 @@ st.markdown(
     }
     .app-subtitle {
         text-align: center;
-        font-size: 15px;  /* bir tık büyütüldü */
+        font-size: 15px;
         color: #555;
         max-width: 950px;
         margin: 0 auto 20px auto;
+        line-height: 1.5;
     }
 
     /* Kart tasarımı */
@@ -102,6 +103,11 @@ st.markdown(
         margin-top: 4px;
         text-align: justify;
     }
+    .hint-text {
+        font-size: 11px;
+        color: #6b7280;
+        margin-top: 4px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -132,6 +138,27 @@ def load_model():
 
 
 model, feature_cols = load_model()
+
+# Yardımcı fonksiyonlar (kolesterol / glukoz kategorileri)
+def chol_category(total_chol):
+    """mg/dL -> 1/2/3 kategorisi"""
+    if total_chol <= 200:
+        return 1  # Normal
+    elif total_chol <= 240:
+        return 2  # Sınırda
+    else:
+        return 3  # Yüksek
+
+
+def gluc_category(fasting_glucose):
+    """mg/dL -> 1/2/3 kategorisi"""
+    if fasting_glucose < 100:
+        return 1  # Normal
+    elif fasting_glucose < 126:
+        return 2  # Prediyabet
+    else:
+        return 3  # Diyabet
+
 
 # =========================================================
 # BAŞLIK VE GENEL AÇIKLAMA
@@ -181,8 +208,7 @@ with left_col:
         total_chol = st.slider("Total Kolesterol (mg/dL)", 120, 320, 200, step=5)
         fasting_glucose = st.slider("Açlık Kan Şekeri (mg/dL)", 60, 250, 95, step=1)
 
-        # --- KULLANICI ARAYÜZÜ KODLAMASI ---
-        # 0 = Hayır, 1 = Evet  (insan için doğal olan)
+        # 0 = Hayır, 1 = Evet (UI için)
         smoke_ui = st.selectbox(
             "Sigara Kullanımı",
             options=[0, 1],
@@ -208,20 +234,15 @@ with left_col:
     pulse_pressure = ap_hi - ap_lo
     age_bp_index = age_years * ap_hi
 
-    # Yaşam tarzı skoru (0 = kötü, 3 = iyi)
-    # sigara içmiyorsa (smoke_ui=0) -> +1
-    # alkol kullanmıyorsa (alco_ui=0) -> +1
-    # aktif ise (active=1)           -> +1
-    lifestyle_score = (1 - smoke_ui) + (1 - alco_ui) + active
+    # Literatüre dayalı yaşam tarzı skoru:
+    # Sigara (Evet)  -> +1
+    # Alkol (Evet)   -> +1
+    # Pasif (0)      -> +1
+    lifestyle_score = smoke_ui + alco_ui + (1 - active)  # 0–3, yüksek = daha riskli
 
-    # ------------------ MODEL KODLAMASI ------------------
-    # Eğitimde büyük olasılıkla 1 = sağlıklı, 0 = riskli (ya da tam tersi)
-    # Şu anki gözleme göre sigara/alkol "Evet" dendiğinde risk düşüyordu;
-    # bu da modelin 0'ı sağlıklı, 1'i riskliymiş gibi görmesine sebep.
-    # Bunu tersine çeviriyoruz: kullanıcı 1 (Evet) dese bile, modele
-    # veri setindeki kodlama ile gönderiyoruz.
-    smoke_model = 1 - smoke_ui   # 0->1, 1->0
-    alco_model = 1 - alco_ui     # 0->1, 1->0
+    # Kolesterol / Glukoz kategorileri (modele böyle gidiyor)
+    chol_cat = chol_category(total_chol)
+    gluc_cat = gluc_category(fasting_glucose)
 
     # -----------------------------------------------------
     # TAHMİN BUTONU (ek özelliklerden önce)
@@ -229,23 +250,27 @@ with left_col:
     st.markdown("")
     predict_btn = st.button("🔍 Kardiyovasküler Risk Tahminini Hesapla")
 
-    st.caption(
-        "Lütfen tüm bilgileri güncelledikten sonra yukarıdaki butona tıklayın. "
-        "Model, tahmin sonucunu bu bölümün hemen altında gösterecektir."
+    st.markdown(
+        "<div class='hint-text'>Lütfen tüm bilgileri girdikten sonra butona tıklayın. "
+        "Model, tahmin sonucunu bu alanın hemen altında gösterecektir.</div>",
+        unsafe_allow_html=True,
     )
 
-    # Girdi sözlüğü: modelin beklediği sıraya göre hazırlanır
+    # -----------------------------------------------------
+    # MODELE GİDECEK GİRDİLER (feature_cols sırasına göre)
+    # -----------------------------------------------------
+    # Model eğitiminde kullanılan anlamlarla tutarlı:
+    # smoke/alco: 0=Hayır, 1=Evet (risk arttırıcı)
     input_dict = {
         "age_years": age_years,
         "height": height,
         "weight": weight,
         "ap_hi": ap_hi,
         "ap_lo": ap_lo,
-        "cholesterol": total_chol,
-        "gluc": fasting_glucose,
-        # modele giden kodlama (smoke_model / alco_model)
-        "smoke": smoke_model,
-        "alco": alco_model,
+        "cholesterol": chol_cat,        # 1/2/3 kategori
+        "gluc": gluc_cat,               # 1/2/3 kategori
+        "smoke": smoke_ui,
+        "alco": alco_ui,
         "active": active,
         "bmi": bmi,
         "pulse_pressure": pulse_pressure,
@@ -268,11 +293,11 @@ with left_col:
             {"Zayıf" if bmi < 18.5 else "Sağlıklı" if bmi < 25 else "Fazla kilolu" if bmi < 30 else "1. derece obezite" if bmi < 35 else "2. derece obezite" if bmi < 40 else "3. derece obezite"}<br>
             <b>Nabız Basıncı (ap_hi − ap_lo):</b> {pulse_pressure:.0f} mmHg<br>
             <b>Yaş × Sistolik Tansiyon İndeksi:</b> {age_bp_index:.0f}<br>
-            <b>Yaşam Tarzı Skoru (0–3, yüksek skor = daha sağlıklı):</b> {lifestyle_score} 
+            <b>Yaşam Tarzı Skoru (0–3, yüksek skor = daha riskli):</b> {lifestyle_score} 
             (sigara: {'var' if smoke_ui else 'yok'}, alkol: {'var' if alco_ui else 'yok'}, aktivite: {'aktif' if active else 'pasif'})<br>
-            <b>Kan Basıncı Kategorisi (sistolik/diastolik):</b> {ap_hi}/{ap_lo} mmHg<br>
-            <b>Kolesterol Durumu:</b> { "Sağlıklı (<200)" if total_chol <= 200 else "Sınırda (200–240)" if total_chol <= 240 else "Yüksek (>240)" }<br>
-            <b>Açlık Kan Şekeri Durumu:</b> { "Normal (70–100)" if 70 <= fasting_glucose < 100 else "Prediyabet (100–126)" if fasting_glucose < 126 else "Diyabet (≥126)" }
+            <b>Kan Basıncı Kategorisi (sistolik/diyastolik):</b> {ap_hi}/{ap_lo} mmHg<br>
+            <b>Kolesterol Durumu (mg/dL):</b> { "Sağlıklı (≤200)" if total_chol <= 200 else "Sınırda (200–240)" if total_chol <= 240 else "Yüksek (>240)" }<br>
+            <b>Açlık Kan Şekeri Durumu (mg/dL):</b> { "Normal (<100)" if fasting_glucose < 100 else "Prediyabet (100–126)" if fasting_glucose < 126 else "Diyabet (≥126)" }
             </div>
             """,
             unsafe_allow_html=True,
@@ -289,24 +314,22 @@ with left_col:
         risk_yuzde = prob * 100
 
         if pred == 1:
-            msg = (
+            st.error(
                 f"⚠️ YÜKSEK RİSK: Model, bu bireyin kardiyovasküler hastalık "
                 f"geliştirme olasılığını yaklaşık %{risk_yuzde:.1f} olarak tahmin etmektedir."
             )
-            st.error(msg)
         else:
-            msg = (
+            st.success(
                 f"✅ DÜŞÜK RİSK: Model, bu bireyin kardiyovasküler hastalık "
                 f"geliştirme olasılığını yaklaşık %{risk_yuzde:.1f} olarak tahmin etmektedir."
             )
-            st.success(msg)
 
         st.markdown(
             """
             <div class='tech-note'>
             <b>Teknik Açıklama:</b> Olasılık, eğitim veri setinde oluşturulan topluluk
             modelinin, gözleme benzer bireylerin sınıf dağılımına dayalı tahminidir.
-            Bu çıktı, klinik kararı desteklemek için tasarlanmış bir karar destek sistemidir;
+            Bu model, klinik kararı desteklemek için tasarlanmış bir karar destek sistemidir;
             tek başına tanı veya tedavi kararında kullanılmamalıdır.
             </div>
             """,
@@ -341,10 +364,10 @@ with right_col:
             <h4>🧪 Veri Ön İşleme ve Modellemenin Notları</h4>
             <ul>
                 <li>Olası aykırı ve tutarsız değerler (özellikle kan basıncı kombinasyonları) 
-                    veri keşfi aşamasında incelenmiş ve uygun eşiklerle filtrelenmiştir.</li>
-                <li>Kayıp değerler, değişkenin dağılımına göre <i>akıllı imputasyon</i> yaklaşımlarıyla ele alınmıştır.</li>
-                <li>Sürekli değişkenler gerekirse ölçeklendirilmiş, kategorik değişkenler uygun şekilde kodlanmıştır.</li>
-                <li>Modelin başarısını izlemek için eğitim/test ayrımı ve sınıf dengesine duyarlı istatistikler kullanılmıştır.</li>
+                    veri keşfi aşamasında klinik eşikler dikkate alınarak filtrelenmiştir.</li>
+                <li>Kayıp değerler, değişkenin dağılımına göre uygun <i>imputasyon</i> yöntemleriyle giderilmiştir.</li>
+                <li>Sürekli değişkenler gerektiğinde ölçeklendirilmiş, kategorik değişkenler uygun biçimde kodlanmıştır.</li>
+                <li>Model performansı, eğitim/test ayrımı ve sınıf dengesini gözeten metriklerle değerlendirilmiştir.</li>
             </ul>
         </div>
         """,
@@ -357,11 +380,15 @@ with right_col:
         <div class="info-card">
             <h4>🧠 Kullanılan Modeller</h4>
             <ul>
-                <li><b>Lojistik Regresyon</b> – doğrusal karar sınırı ile temel risk faktörlerinin etkisini yakalar.</li>
-                <li><b>Karar Ağaçları / Random Forest</b> – doğrusal olmayan etkileşimleri ve karmaşık ilişkileri öğrenir.</li>
-                <li><b>XGBoost</b> – gradyan artırmalı karar ağaçları ile daha hassas ayrımlar yapar.</li>
-                <li>Bu üç modelin çıktıları, bir <b>ensemble (topluluk) oylama</b> yapısı içinde birleştirilerek
-                    daha kararlı ve genellenebilir tahmin elde edilmiştir.</li>
+                <li><b>Lojistik Regresyon:</b> Doğrusal karar sınırı ile temel risk faktörlerinin katsayılarını
+                    tahmin eden klasik bir denetimli öğrenme modelidir. Değişkenlerin etkisi istatistiksel olarak yorumlanabilir.</li>
+                <li><b>Karar Ağaçları / Random Forest:</b> Özellikle doğrusal olmayan ilişkileri, eşik değerlerini ve
+                    değişkenler arası etkileşimleri yakalayan ağaç tabanlı yapay zekâ modelleridir. Random Forest, birçok ağacın
+                    birlikte oy kullanması ile daha kararlı tahminler üretir.</li>
+                <li><b>XGBoost:</b> Art arda kurulan gradyan artırmalı karar ağaçlarından oluşan, hataları kademeli olarak azaltan
+                    güçlü bir boosting algoritmasıdır. Özellikle tablosal klinik verilerde yüksek performansıyla bilinir.</li>
+                <li>Bu üç modelin olasılık çıktıları, <b>ensemble (topluluk)</b> yapısı içinde birleştirilmiş ve bireysel model
+                    hatalarını dengeleyen, daha genellenebilir bir risk tahmin sistemi elde edilmiştir.</li>
             </ul>
         </div>
         """,
@@ -378,7 +405,7 @@ with right_col:
                 <li><b>Duyarlılık (Recall):</b> ≈ 0.70 (hastalığı olan bireyi yakalama oranı)</li>
                 <li><b>F1 Skoru:</b> ≈ 0.72 (dengeli ortalama)</li>
                 <li><b>ROC-AUC:</b> ≈ 0.80 (ayrıştırma gücü)</li>
-                <li>Bu değerler, modelin sınıflar arasındaki ayrımı istatistiksel olarak anlamlı bir düzeyde 
+                <li>Bu değerler, modelin kardiyovasküler hastalık var/yok ayrımını istatistiksel olarak anlamlı bir düzeyde
                     öğrendiğini göstermektedir.</li>
             </ul>
         </div>
