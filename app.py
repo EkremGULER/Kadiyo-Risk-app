@@ -39,10 +39,11 @@ st.markdown(
     }
     .app-subtitle {
         text-align: center;
-        font-size: 13px;
+        font-size: 15px;               /* PUNTOSU BÜYÜTÜLDÜ */
+        line-height: 1.5;
         color: #555;
         max-width: 950px;
-        margin: 0 auto 20px auto;
+        margin: 0 auto 24px auto;
     }
 
     /* Kart tasarımı */
@@ -95,12 +96,17 @@ st.markdown(
         background: linear-gradient(90deg, #db2777, #4f46e5);
     }
 
-    /* Teknik not */
+    /* Teknik not ve buton uyarısı */
     .tech-note {
         font-size: 11px;
         color: #6b7280;
         margin-top: 4px;
         text-align: justify;
+    }
+    .hint-text {
+        font-size: 11px;
+        color: #6b7280;
+        margin-top: 4px;
     }
     </style>
     """,
@@ -216,11 +222,16 @@ with left_col:
     # TAHMİN BUTONU (ek özelliklerden önce)
     # ----------------------------------------------
     st.markdown("")
-
     predict_btn = st.button("🔍 Kardiyovasküler Risk Tahminini Hesapla")
 
+    # BUTON ALTINA UYARI / YÖNLENDİRME METNİ
+    st.markdown(
+        "<div class='hint-text'>Lütfen yukarıdaki bilgileri doldurduktan sonra butona tıklayın. "
+        "Model, tahmini bu alanın altında gösterecektir.</div>",
+        unsafe_allow_html=True,
+    )
+
     # Girdi sözlüğü: modelin beklediği sıraya göre hazırlanır
-    # (feature_cols ile aynı isimleri kullanıyoruz)
     input_dict = {
         "age_years": age_years,
         "height": height,
@@ -272,24 +283,26 @@ with left_col:
         pred = model.predict(input_df)[0]
         risk_yuzde = prob * 100
 
+        # HTML ETİKETLERİ KALDIRILDI – st.error/st.success düz metin kullanıyor
         if pred == 1:
             st.error(
-                f"⚠️ <b>YÜKSEK RİSK:</b> Model, bu bireyin kardiyovasküler hastalık "
-                f"geliştirme olasılığını yaklaşık <b>%{risk_yuzde:.1f}</b> olarak tahmin etmektedir.",
+                f"⚠️ YÜKSEK RİSK: Model, bu bireyin kardiyovasküler hastalık "
+                f"geliştirme olasılığını yaklaşık %{risk_yuzde:.1f} olarak tahmin etmektedir.",
                 icon="⚠️",
             )
         else:
             st.success(
-                f"✅ <b>DÜŞÜK RİSK:</b> Model, bu bireyin kardiyovasküler hastalık "
-                f"geliştirme olasılığını yaklaşık <b>%{risk_yuzde:.1f}</b> olarak tahmin etmektedir.",
+                f"✅ DÜŞÜK RİSK: Model, bu bireyin kardiyovasküler hastalık "
+                f"geliştirme olasılığını yaklaşık %{risk_yuzde:.1f} olarak tahmin etmektedir.",
                 icon="✅",
             )
 
         st.markdown(
             """
             <div class='tech-note'>
-            <b>Teknik Açıklama:</b> Olasılık, eğitim veri setinde oluşturulan topluluk
-            modelinin, gözleme benzer bireylerin sınıf dağılımına dayalı tahminidir.
+            <b>Teknik Açıklama:</b> Hesaplanan olasılık, eğitim veri seti üzerinde
+            denetimli öğrenme ile eğitilmiş topluluk (ensemble) sınıflandırıcısının,
+            gözleme en çok benzeyen bireylerin sınıf dağılımına dayalı tahminidir.
             Bu çıktı, klinik kararı desteklemek için tasarlanmış bir karar destek sistemidir;
             tek başına tanı veya tedavi kararında kullanılmamalıdır.
             </div>
@@ -325,10 +338,10 @@ with right_col:
             <h4>🧪 Veri Ön İşleme ve Modellemenin Notları</h4>
             <ul>
                 <li>Olası aykırı ve tutarsız değerler (özellikle kan basıncı kombinasyonları) 
-                    veri keşfi aşamasında incelenmiş ve uygun eşiklerle filtrelenmiştir.</li>
-                <li>Kayıp değerler, değişkenin dağılımına göre <i>akıllı imputasyon</i> yaklaşımlarıyla ele alınmıştır.</li>
-                <li>Sürekli değişkenler gerekirse ölçeklendirilmiş, kategorik değişkenler uygun şekilde kodlanmıştır.</li>
-                <li>Modelin başarısını izlemek için eğitim/test ayrımı ve sınıf dengesine duyarlı istatistikler kullanılmıştır.</li>
+                    veri keşfi aşamasında incelenmiş ve klinik olarak kabul edilebilir eşiklerle filtrelenmiştir.</li>
+                <li>Kayıp değerler, değişkenin dağılımına uygun <i>imputasyon</i> yaklaşımları ile giderilmiştir.</li>
+                <li>Sürekli değişkenler gerektiğinde standartlaştırılmış, kategorik değişkenler uygun biçimde kodlanmıştır.</li>
+                <li>Model performansı, eğitim/test ayrımı ve sınıf dengesini gözeten istatistiklerle izlenmiştir.</li>
             </ul>
         </div>
         """,
@@ -341,11 +354,18 @@ with right_col:
         <div class="info-card">
             <h4>🧠 Kullanılan Modeller</h4>
             <ul>
-                <li><b>Lojistik Regresyon</b> – doğrusal karar sınırı ile temel risk faktörlerinin etkisini yakalar.</li>
-                <li><b>Karar Ağaçları / Random Forest</b> – doğrusal olmayan etkileşimleri ve karmaşık ilişkileri öğrenir.</li>
-                <li><b>XGBoost</b> – gradyan artırmalı karar ağaçları ile daha ince ayrımlar yapar.</li>
-                <li>Bu üç modelin çıktıları, bir <b>ensemble (topluluk) oylama</b> yapısı içinde birleştirilerek
-                    daha kararlı ve genellenebilir tahmin elde edilmiştir.</li>
+                <li><b>Lojistik Regresyon:</b> Doğrusal karar sınırı kullanan, 
+                    parametreleri maksimum olasılık ile öğrenilen klasik bir denetimli öğrenme 
+                    (supervised learning) sınıflandırıcısıdır. Temel risk faktörlerinin yönünü 
+                    ve büyüklüğünü yorumlamaya imkân verir.</li>
+                <li><b>Karar Ağaçları / Random Forest:</b> Değişkenler arası doğrusal olmayan 
+                    etkileşimleri yakalayan ağaç tabanlı yapay zekâ modelleridir. Random Forest, 
+                    çok sayıda ağacın rassal örnekler üzerinde eğitilmesiyle elde edilen bir topluluk yapısıdır.</li>
+                <li><b>XGBoost:</b> Art arda kurulan gradyan artırmalı karar ağaçlarından oluşan,
+                    hataları kademeli olarak azaltan güçlü bir boosting algoritmasıdır. Özellikle karmaşık
+                    karar sınırlarını modelleme konusunda literatürde sık kullanılan bir yapay zekâ yöntemidir.</li>
+                <li>Bu üç modelin olasılık çıktıları, <b>soft-voting</b> adı verilen bir ensemble (topluluk)
+                    yaklaşımı ile ağırlıklı ortalamaya dönüştürülmüş ve son risk tahmini bu birleşik modelden elde edilmiştir.</li>
             </ul>
         </div>
         """,
@@ -362,8 +382,9 @@ with right_col:
                 <li><b>Duyarlılık (Recall):</b> ≈ 0.70 (hastalığı olan bireyi yakalama oranı)</li>
                 <li><b>F1 Skoru:</b> ≈ 0.72 (dengeli ortalama)</li>
                 <li><b>ROC-AUC:</b> ≈ 0.80 (ayrıştırma gücü)</li>
-                <li>Bu değerler, modelin sınıflar arasındaki ayrımı istatistiksel olarak anlamlı bir düzeyde 
-                    öğrendiğini göstermektedir.</li>
+                <li>Bu değerler, topluluk modelinin sınıflar arasındaki ayrımı istatistiksel olarak 
+                    anlamlı bir düzeyde öğrendiğini ve klinik karar destek uygulamaları ile 
+                    karşılaştırılabilir bir performans sergilediğini göstermektedir.</li>
             </ul>
         </div>
         """,
