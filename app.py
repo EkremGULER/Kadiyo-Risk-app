@@ -1,3 +1,4 @@
+model, feature_cols = load_model()
 st.warning(feature_cols)
 
 import streamlit as st
