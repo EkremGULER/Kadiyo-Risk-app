@@ -68,21 +68,40 @@ body {
 # -------------------------------------------------
 # MODEL YÜKLEME
 # -------------------------------------------------
+import streamlit as st
+import joblib
+import gdown
+import os
+from pathlib import Path
+
+# -------------------------------------------------
+# Model ve feature kolonlarını güvenli şekilde yükle
+# -------------------------------------------------
 @st.cache_resource
 def load_model():
-    # Google Drive yedeği (gdown ile)
+    """
+    1. cardio_ensemble_model.pkl yoksa Google Drive'dan indir
+    2. Modeli ve feature kolonlarını yükle
+    """
     file_id = "1WdRoUATILi2VUCuyOEFAnrpoVJ7t69y-"
     url = f"https://drive.google.com/uc?id={file_id}"
-    model_path = "cardio_ensemble_model.pkl"
+    model_path = Path("cardio_ensemble_model.pkl")
 
-    if not os.path.exists(model_path):
-        gdown.download(url, model_path, quiet=False)
+    # Dosya yoksa Drive'dan indir
+    if not model_path.exists():
+        gdown.download(url, str(model_path), quiet=False)
 
-    model = joblib.load("cardio_ensemble_model.pkl")
+    # Model ve feature kolonlarını yükle
+    model = joblib.load(model_path)
     feature_cols = joblib.load("cardio_feature_cols.pkl")
+
     return model, feature_cols
 
-model, feature_cols = load_model()
+
+# Uygulamada model çağrısı
+with st.spinner("Model yükleniyor, lütfen bekleyiniz..."):
+    model, feature_cols = load_model()
+
 
 # -------------------------------------------------
 # BAŞLIK VE GENEL AÇIKLAMA
