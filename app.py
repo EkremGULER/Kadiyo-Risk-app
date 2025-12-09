@@ -1,7 +1,3 @@
-model, feature_cols = load_model()
-st.code(feature_cols)
-
-
 import streamlit as st
 import pandas as pd
 import numpy as np
