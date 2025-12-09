@@ -51,27 +51,39 @@ body {
 </style>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------
-# 📌 MODEL YÜKLEME (LOCAL + DRIVE FALLBACK)
-# -------------------------------------------------
-import os
-import joblib
 import streamlit as st
-import pandas as pd
-import numpy as np
+import joblib
+import gdown
+import os
+from pathlib import Path
 
-# Model yükleme
+# -------------------------------------------------
+# Model ve feature kolonlarını güvenli şekilde yükle
+# -------------------------------------------------
 @st.cache_resource
 def load_model():
-    base_path = os.path.dirname(__file__)  # şu anki dizin
-    model_path = os.path.join(base_path, "cardio_ensemble_model.pkl")
-    feature_path = os.path.join(base_path, "cardio_feature_cols.pkl")
+    """
+    1. cardio_ensemble_model.pkl yoksa Google Drive'dan indir
+    2. Modeli ve feature kolonlarını yükle
+    """
+    file_id = "1WdRoUATILi2VUCuyOEFAnrpoVJ7t69y-"
+    url = f"https://drive.google.com/uc?id={file_id}"
+    model_path = Path("cardio_ensemble_model.pkl")
 
+    # Dosya yoksa Drive'dan indir
+    if not model_path.exists():
+        gdown.download(url, str(model_path), quiet=False)
+
+    # Model ve feature kolonlarını yükle
     model = joblib.load(model_path)
-    feature_cols = joblib.load(feature_path)
+    feature_cols = joblib.load("cardio_feature_cols.pkl")
+
     return model, feature_cols
 
-model, feature_cols = load_model()
+
+# Uygulamada model çağrısı
+with st.spinner("Model yükleniyor, lütfen bekleyiniz..."):
+    model, feature_cols = load_model()
 
 
 # ------------------------------------------
