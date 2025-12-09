@@ -13,8 +13,9 @@ def load_model():
     """
     Model dosyası yoksa Google Drive'dan indir,
     sonra modeli ve feature kolonlarını yükle.
+    (Bu kısım Streamlit Cloud'da da çalışır.)
     """
-    # 1) Google Drive dosya ID (senin paylaştığın linkten)
+    # 1) Google Drive dosya ID (paylaştığın linkten)
     file_id = "1WdRoUATILi2VUCuyOEFAnrpoVJ7t69y-"
     url = f"https://drive.google.com/uc?id={file_id}"
 
@@ -32,6 +33,7 @@ def load_model():
     return model, feature_cols
 
 
+# Model ve feature listesini yükle
 model, feature_cols = load_model()
 
 # ----------------------------------------------------------
@@ -50,9 +52,12 @@ st.write(
     Bu uygulama, **Lojistik Regresyon + Random Forest + XGBoost**
     modellerinden oluşan bir **Ensemble (Topluluk) Yapay Zekâ Modeli** ile
     kardiyovasküler hastalık riskini tahmin eder.
-    
+
     Kullanılan veri seti, 70.000'den fazla bireyin demografik ve klinik
     özelliklerini içeren **Cardio Vascular Disease** veri setidir.
+
+    > ⚠️ Bu uygulama *sadece eğitim / demo amaçlıdır*. 
+    > Buradaki değer aralıkları, klinik rehber yerine geçmez.
     """
 )
 
@@ -73,24 +78,34 @@ with col1:
     ap_lo = st.slider("Diyastolik Tansiyon (ap_lo)", 40, 180, 80)
 
 with col2:
-    cholesterol = st.selectbox(
-        "Kolesterol Düzeyi",
-        options=[1, 2, 3],
-        format_func=lambda x: {
-            1: "1 - Normal",
-            2: "2 - Yüksek",
-            3: "3 - Çok Yüksek"
-        }[x]
+    # --- Sayısal Kolesterol (mg/dL) ---
+    total_chol = st.slider(
+        "Toplam Kolesterol (mg/dL)  (Sadece demo amaçlı aralıklar)",
+        100, 320, 190,
+        help="Bu aralıklar klinik rehber değildir, sadece modeli beslemek için kullanılmaktadır."
     )
-    gluc = st.selectbox(
-        "Glikoz Düzeyi",
-        options=[1, 2, 3],
-        format_func=lambda x: {
-            1: "1 - Normal",
-            2: "2 - Yüksek",
-            3: "3 - Çok Yüksek"
-        }[x]
+    # Kolesterolü 1-3 kategorisine çevir (sadece model için)
+    if total_chol < 200:
+        cholesterol = 1
+    elif total_chol < 240:
+        cholesterol = 2
+    else:
+        cholesterol = 3
+
+    # --- Sayısal Glukoz (mg/dL) ---
+    fasting_glucose = st.slider(
+        "Açlık Glukoz (mg/dL)  (Sadece demo amaçlı aralıklar)",
+        60, 220, 90,
+        help="Bu aralıklar klinik rehber değildir, sadece modeli beslemek için kullanılmaktadır."
     )
+    # Glukozu 1-3 kategorisine çevir (sadece model için)
+    if fasting_glucose < 100:
+        gluc = 1
+    elif fasting_glucose < 126:
+        gluc = 2
+    else:
+        gluc = 3
+
     smoke = st.selectbox(
         "Sigara Kullanımı",
         options=[0, 1],
@@ -115,13 +130,7 @@ st.markdown("---")
 bmi = weight / ((height / 100) ** 2)
 pulse_pressure = ap_hi - ap_lo
 age_bp_index = age_years * ap_hi
-# Açıklama için: 0-3 arası skor (yüksekse daha riskli)
-lifestyle_score = smoke + alco + (1 - active)
-
-# Kullanıcı 1 diyorsa (Evet), modelde aslında 0 olmalı
-# Kullanıcı 0 diyorsa (Hayır), modelde 1 olmalı
-smoke_corrected = 0 if smoke == 1 else 1
-alco_corrected  = 0 if alco  == 1 else 1
+lifestyle_score = smoke + alco + (1 - active)  # 0-3 arası skor (yüksekse daha riskli)
 
 with st.expander("ℹ Hesaplanan Ek Özellikler"):
     st.write(f"**BMI (Vücut Kitle İndeksi):** {bmi:.1f}")
@@ -132,6 +141,13 @@ with st.expander("ℹ Hesaplanan Ek Özellikler"):
     )
 
 # ----------------------------------------------------------
+# Sigara / Alkol model düzeltmeleri
+# ----------------------------------------------------------
+# Kullanıcı 1 seçerse, modelde 1 riskli olacağı için aynen geçsin, 0 seçerse 0 olsun.
+smoke_corrected = 1 if smoke == 1 else 0
+alco_corrected = 1 if alco == 1 else 0
+
+# ----------------------------------------------------------
 # Girdi vektörünü, modelin beklediği sıralamada hazırlama
 # ----------------------------------------------------------
 input_dict = {
@@ -140,17 +156,18 @@ input_dict = {
     "weight": weight,
     "ap_hi": ap_hi,
     "ap_lo": ap_lo,
-    "cholesterol": cholesterol,
-    "gluc": gluc,
-    "smoke": smoke_corrected,   # düzeltildi
-    "alco": alco_corrected,     # düzeltildi
+    "cholesterol": cholesterol,   # 1-3 kategori
+    "gluc": gluc,                 # 1-3 kategori
+    "smoke": smoke_corrected,
+    "alco": alco_corrected,
     "active": active,
     "bmi": bmi,
     "pulse_pressure": pulse_pressure,
     "age_bp_index": age_bp_index,
-    "lifestyle_score": lifestyle_score
+    "lifestyle_score": lifestyle_score,
 }
 
+# feature_cols sırasına göre DF oluştur
 input_df = pd.DataFrame([[input_dict[col] for col in feature_cols]], columns=feature_cols)
 
 st.markdown("---")
