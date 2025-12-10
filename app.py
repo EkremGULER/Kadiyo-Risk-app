@@ -102,6 +102,26 @@ st.markdown(
         margin-top: 4px;
         text-align: justify;
     }
+
+    /* RİSK SONUÇ KUTULARI */
+    .risk-box {
+        margin-top: 10px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        border-width: 1px;
+        border-style: solid;
+    }
+    .risk-low {
+        background-color: #dcfce7;   /* yeşil arka plan */
+        border-color: #bbf7d0;
+        color: #166534;
+    }
+    .risk-high {
+        background-color: #fee2e2;   /* kırmızı arka plan */
+        border-color: #fecaca;
+        color: #b91c1c;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -228,9 +248,6 @@ with left_col:
     age_bp_index = age_years * ap_hi
 
     # Yaşam tarzı skoru (0 = en kötü, 3 = en iyi)
-    # Sigara yok (0) -> 1 puan
-    # Alkol yok  (0) -> 1 puan
-    # Aktif      (1) -> 1 puan
     lifestyle_score = (1 - smoke) + (1 - alco) + active
 
     # ----------------------------------------------
@@ -296,21 +313,18 @@ with left_col:
         prob = calibrate_probability(prob_raw, train_prevalence=0.50, population_prevalence=0.10)
         risk_yuzde = prob * 100
 
-        # Literatüre daha yakın bir karar eşiği (0.20 = %20)
-        pred = 1 if prob >= 0.20 else 0
+        # %40 ve üzeri kırmızı, altı yeşil
+        risk_class = "risk-high" if risk_yuzde >= 40 else "risk-low"
 
-        if pred == 1:
-            st.error(
-                f"⚠️ <b>YÜKSEK RİSK:</b> Model, bu bireyin kardiyovasküler hastalık "
-                f"geliştirme olasılığını yaklaşık <b>%{risk_yuzde:.1f}</b> olarak tahmin etmektedir.",
-                icon="⚠️",
-            )
-        else:
-            st.success(
-                f"✅ <b>DÜŞÜK RİSK:</b> Model, bu bireyin kardiyovasküler hastalık "
-                f"geliştirme olasılığını yaklaşık <b>%{risk_yuzde:.1f}</b> olarak tahmin etmektedir.",
-                icon="✅",
-            )
+        st.markdown(
+            f"""
+            <div class="risk-box {risk_class}">
+            🩺 Model, bu bireyin kardiyovasküler hastalık geliştirme olasılığını
+            yaklaşık %{risk_yuzde:.1f} olarak tahmin etmektedir.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         st.markdown(
             """
