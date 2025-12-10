@@ -143,27 +143,20 @@ def load_model():
     if not os.path.exists(model_path):
         gdown.download(url, model_path, quiet=False)
 
-    # Ana topluluk model
     model = joblib.load(model_path)
-    # Eğitim sırasında kullanılan feature sırası
     feature_cols = joblib.load("cardio_feature_cols.pkl")
-
     return model, feature_cols
 
 
 model, feature_cols = load_model()
 
 # =========================================================
-# Olasılık kalibrasyonu (prior ayarı)
+# 1) Bayes tipi kalibrasyon (eğitim prevalansı vs toplum prevalansı)
 # =========================================================
 def calibrate_probability(p_ml, train_prevalence=0.50, population_prevalence=0.10):
-    """
-    Eğitim setindeki prevalans ile gerçek populasyon prevalansı farklıysa
-    modelin verdiği olasılığı Bayes mantığıyla yeniden ölçekler.
-    Varsayılan: eğitimde ~%50, toplumda ~%10 kardiyovasküler hastalık prevalansı.
-    """
     eps = 1e-6
-    p = min(max(float(p_ml), eps), 1 - eps)
+    p = float(p_ml)
+    p = min(max(p, eps), 1 - eps)
 
     old_odds = p / (1 - p)
     train_odds = train_prevalence / (1 - train_prevalence)
@@ -173,6 +166,77 @@ def calibrate_probability(p_ml, train_prevalence=0.50, population_prevalence=0.1
     new_odds = old_odds * prior_ratio
     new_p = new_odds / (1 + new_odds)
     return new_p
+
+# =========================================================
+# 2) Literatür bazlı risk puanı + rule-based olasılık
+# =========================================================
+def rule_based_risk(age_years, ap_hi, ap_lo, total_chol, fasting_glucose, bmi, smoke, alco, active):
+    """
+    Majör risk faktörlerinden puan hesaplar ve bunu kaba bir olasılığa map eder.
+    Çok yüksek risk faktörlerinde olasılık 0.7–0.85'lere kadar çıkar; 
+    az faktörde 0.05–0.10 bandında kalır.
+    """
+    points = 0
+
+    # Yaş
+    if age_years >= 55:
+        points += 2
+    elif age_years >= 45:
+        points += 1
+
+    # Kan basıncı
+    if ap_hi >= 160 or ap_lo >= 100:
+        points += 2
+    elif ap_hi >= 140 or ap_lo >= 90:
+        points += 1
+
+    # Kolesterol
+    if total_chol > 240:
+        points += 2
+    elif total_chol >= 200:
+        points += 1
+
+    # Glukoz
+    if fasting_glucose >= 126:
+        points += 2
+    elif fasting_glucose >= 100:
+        points += 1
+
+    # BMI
+    if bmi >= 35:
+        points += 2
+    elif bmi >= 30:
+        points += 1
+
+    # Sigara
+    if smoke == 1:
+        points += 2
+
+    # Alkol
+    if alco == 1:
+        points += 1
+
+    # Fiziksel aktivite (pasif ise)
+    if active == 0:
+        points += 1
+
+    # Puan -> olasılık mapping
+    if points <= 1:
+        p_rule = 0.05
+    elif points <= 3:
+        p_rule = 0.10
+    elif points <= 5:
+        p_rule = 0.18
+    elif points <= 7:
+        p_rule = 0.30
+    elif points <= 9:
+        p_rule = 0.50
+    elif points <= 11:
+        p_rule = 0.70
+    else:
+        p_rule = 0.85
+
+    return p_rule, points
 
 # =========================================================
 # BAŞLIK VE GENEL AÇIKLAMA
@@ -211,7 +275,6 @@ with left_col:
     c1, c2 = st.columns(2)
 
     with c1:
-        # Cinsiyet alanını kaldırdık; modele zaten girmiyordu.
         age_years = st.slider("Yaş (yıl)", 29, 65, 50)
         height = st.slider("Boy (cm)", 130, 210, 170)
         weight = st.slider("Kilo (kg)", 40, 150, 75)
@@ -254,11 +317,10 @@ with left_col:
     # TAHMİN BUTONU (ek özelliklerden önce)
     # ----------------------------------------------
     st.markdown("")
-
     predict_btn = st.button("🔍 Kardiyovasküler Risk Tahminini Hesapla")
     st.caption("Lütfen tüm bilgileri girdikten sonra butona tıklayın. Model, tahmin sonucunu bu alanın hemen altında gösterecektir.")
 
-    # Girdi sözlüğü: modelin beklediği sıraya göre hazırlanır
+    # Modelin beklediği sıraya göre input hazırlama
     input_dict = {
         "age_years": age_years,
         "height": height,
@@ -276,7 +338,6 @@ with left_col:
         "lifestyle_score": lifestyle_score,
     }
 
-    # DataFrame'i feature_cols sırasına göre oluştur
     input_df = pd.DataFrame([[input_dict[col] for col in feature_cols]], columns=feature_cols)
 
     # ----------------------------------------------
@@ -306,12 +367,19 @@ with left_col:
     # TAHMİN ÇIKTISI
     # ----------------------------------------------
     if predict_btn:
-        # Modelin ham tahmini
+        # 1) ML modelinin ham tahmini + prevalans kalibrasyonu
         prob_raw = model.predict_proba(input_df)[0][1]
+        prob_ml = calibrate_probability(prob_raw, train_prevalence=0.50, population_prevalence=0.10)
 
-        # Toplum prevalansına göre kalibre edilmiş tahmin
-        prob = calibrate_probability(prob_raw, train_prevalence=0.50, population_prevalence=0.10)
-        risk_yuzde = prob * 100
+        # 2) Literatür bazlı rule-based tahmin
+        prob_rule, risk_points = rule_based_risk(
+            age_years, ap_hi, ap_lo, total_chol, fasting_glucose, bmi, smoke, alco, active
+        )
+
+        # 3) İki tahmini birleştirme (rule-based'e daha fazla ağırlık veriyoruz)
+        final_prob = 0.35 * prob_ml + 0.65 * prob_rule
+        final_prob = float(np.clip(final_prob, 0.01, 0.95))
+        risk_yuzde = final_prob * 100
 
         # %40 ve üzeri kırmızı, altı yeşil
         risk_class = "risk-high" if risk_yuzde >= 40 else "risk-low"
@@ -330,20 +398,20 @@ with left_col:
             """
             <div class='tech-note'>
             <b>Teknik Açıklama:</b> Gösterilen olasılık, eğitim veri setinde oluşturulan topluluk
-            modelinin ham tahmini, kardiyovasküler hastalık prevalansına ilişkin literatürden alınan
-            oranlarla Bayes yaklaşımı kullanılarak yeniden kalibre edilerek hesaplanmıştır. 
-            Bu çıktı, klinik kararı desteklemek için tasarlanmış bir karar destek sistemidir; 
-            tek başına tanı veya tedavi kararında kullanılmamalıdır.
+            modelinin tahmini ile majör risk faktörlerinden türetilmiş kural tabanlı bir puanlama
+            sisteminin birlikte kullanılmasıyla (ağırlıklı ortalama) hesaplanmıştır. 
+            Kardiyovasküler hastalık prevalansına ilişkin literatür oranları da Bayes yaklaşımıyla 
+            dikkate alınmıştır. Bu çıktı, klinik kararı desteklemek için tasarlanmış bir karar destek 
+            sistemidir; tek başına tanı veya tedavi kararında kullanılmamalıdır.
             </div>
             """,
             unsafe_allow_html=True,
         )
 
 # =========================================================
-# SAĞ SÜTUN: BİLGİ KARTLARI
+# SAĞ SÜTUN: BİLGİ KARTLARI (AYNEN KORUNDU)
 # =========================================================
 with right_col:
-    # ----------------- Kullanılan Veri Seti ----------------
     st.markdown(
         """
         <div class="info-card">
@@ -360,7 +428,6 @@ with right_col:
         unsafe_allow_html=True,
     )
 
-    # ----------------- Veri Ön İşleme ----------------------
     st.markdown(
         """
         <div class="info-card">
@@ -377,7 +444,6 @@ with right_col:
         unsafe_allow_html=True,
     )
 
-    # ----------------- Kullanılan Modeller -----------------
     st.markdown(
         """
         <div class="info-card">
@@ -394,7 +460,6 @@ with right_col:
         unsafe_allow_html=True,
     )
 
-    # ----------------- Eğitim Performansı ------------------
     st.markdown(
         """
         <div class="info-card">
