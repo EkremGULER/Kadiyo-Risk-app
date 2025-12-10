@@ -24,8 +24,9 @@ st.markdown(
         font-family: "Segoe UI", sans-serif;
         background-color: #f7f9fc;
     }
-    .main { padding-top: 10px; }
-
+    .main {
+        padding-top: 10px;
+    }
     .app-title {
         text-align: center;
         font-size: 32px;
@@ -34,12 +35,11 @@ st.markdown(
     }
     .app-subtitle {
         text-align: center;
-        font-size: 14px;
+        font-size: 15px;   /* bir tık büyüttüm */
         color: #555;
         max-width: 950px;
         margin: 0 auto 20px auto;
     }
-
     .info-card {
         background-color: #ffffff;
         border-radius: 10px;
@@ -60,19 +60,16 @@ st.markdown(
         padding-left: 18px;
         margin-bottom: 0;
     }
-
     .feature-box {
         font-size: 11.5px;
         line-height: 1.5;
     }
-
     .stSlider > div > div > div > div {
         background: linear-gradient(90deg, #ec4899, #6366f1);
     }
     .stSlider > div > div > div:nth-child(2) > div {
         background-color: #e5e7eb;
     }
-
     .stButton>button {
         background: linear-gradient(90deg, #ec4899, #6366f1);
         color: white;
@@ -85,7 +82,6 @@ st.markdown(
     .stButton>button:hover {
         background: linear-gradient(90deg, #db2777, #4f46e5);
     }
-
     .tech-note {
         font-size: 11px;
         color: #6b7280;
@@ -184,6 +180,8 @@ with left_col:
             format_func=lambda x: "Aktif (Düzenli)" if x == 1 else "Pasif (Hareketsiz)",
         )
 
+    st.markdown("")
+
     # -----------------------------------------------------
     # TÜRETİLMİŞ ÖZELLİKLER
     # -----------------------------------------------------
@@ -194,22 +192,43 @@ with left_col:
     # Yaşam tarzı skoru (0 = en kötü, 3 = en iyi)
     lifestyle_score = (1 - smoke) + (1 - alco) + active
 
-    # ----------------------------------------------
-    # TAHMİN BUTONU (ek özelliklerden önce)
-    # ----------------------------------------------
+    # ---- ÖNEMLİ: kolesterol ve glukozu 1–3 kategoriye çevir ----
+    # Veri setindeki tanım:
+    # 1: normal, 2: yüksek, 3: çok yüksek
+    if total_chol <= 200:
+        chol_cat = 1
+    elif total_chol <= 240:
+        chol_cat = 2
+    else:
+        chol_cat = 3
+
+    # 1: normal, 2: yüksek, 3: çok yüksek
+    if fasting_glucose < 100:
+        gluc_cat = 1
+    elif fasting_glucose < 126:
+        gluc_cat = 2
+    else:
+        gluc_cat = 3
+
+    # -----------------------------------------------------
+    # TAHMİN BUTONU
+    # -----------------------------------------------------
     st.markdown("")
     predict_btn = st.button("🔍 Kardiyovasküler Risk Tahminini Hesapla")
-    st.caption("Lütfen tüm bilgileri girdikten sonra bu butona tıklayın. Tahmin sonucu aşağıda gösterilir.")
+    st.caption(
+        "Lütfen yukarıdaki bilgileri girdikten sonra bu butona tıklayın. "
+        "Model, tahmin sonucunu bu alanın hemen altında gösterecektir."
+    )
 
-    # Model girdisi
+    # Modelin beklediği girdiler (feature_cols ile aynı isimler)
     input_dict = {
         "age_years": age_years,
         "height": height,
         "weight": weight,
         "ap_hi": ap_hi,
         "ap_lo": ap_lo,
-        "cholesterol": total_chol,
-        "gluc": fasting_glucose,
+        "cholesterol": chol_cat,      # KATEGORİ veriyoruz
+        "gluc": gluc_cat,             # KATEGORİ veriyoruz
         "smoke": smoke,
         "alco": alco,
         "active": active,
@@ -219,7 +238,8 @@ with left_col:
         "lifestyle_score": lifestyle_score,
     }
 
-    input_df = pd.DataFrame([[input_dict[col] for col in feature_cols]], columns=feature_cols)
+    input_df = pd.DataFrame([[input_dict[col] for col in feature_cols]],
+                            columns=feature_cols)
 
     # ----------------------------------------------
     # HESAPLANAN EK ÖZELLİKLER
@@ -235,7 +255,7 @@ with left_col:
             <b>Yaşam Tarzı Skoru (0–3, yüksek skor = daha sağlıklı):</b> {lifestyle_score}
             (sigara: {'var' if smoke else 'yok'}, alkol: {'var' if alco else 'yok'}, aktivite: {'aktif' if active else 'pasif'})<br>
             <b>Kan Basıncı Kategorisi (sistolik/diastolik):</b> {ap_hi}/{ap_lo} mmHg<br>
-            <b>Kolesterol Durumu:</b> { "Sağlıklı (<200)" if total_chol <= 200 else "Sınırda (200–240)" if total_chol <= 240 else "Yüksek (>240)" }<br>
+            <b>Kolesterol Durumu:</b> { "Sağlıklı (&lt;200)" if total_chol <= 200 else "Sınırda (200–240)" if total_chol <= 240 else "Yüksek (&gt;240)" }<br>
             <b>Açlık Kan Şekeri Durumu:</b> { "Normal (70–100)" if 70 <= fasting_glucose < 100 else "Prediyabet (100–126)" if fasting_glucose < 126 else "Diyabet (≥126)" }
             </div>
             """,
@@ -245,32 +265,59 @@ with left_col:
     st.markdown("")
 
     # ----------------------------------------------
-    # TAHMİN ÇIKTISI  (sigara/alkol için manuel düzeltmeli)
+    # TAHMİN ÇIKTISI
     # ----------------------------------------------
     if predict_btn:
-        # Modelden gelen ham olasılık
-        prob_raw = model.predict_proba(input_df)[0][1]
+        # Modelden ham olasılık
+        base_prob = float(model.predict_proba(input_df)[0][1])
 
-        # --- Sigara / alkol için literatüre dayalı manuel ayarlama ---
-        adjustment = 0.0
+        # -------- Literatür temelli küçük düzeltmeler --------
+        risk_delta = 0.0
 
-        # Sigara içiyorsa +0.10
+        # Kolesterol etkisi
+        if chol_cat == 3:
+            risk_delta += 0.08
+        elif chol_cat == 2:
+            risk_delta += 0.04
+        else:
+            risk_delta -= 0.02
+
+        # Glukoz etkisi
+        if gluc_cat == 3:
+            risk_delta += 0.08
+        elif gluc_cat == 2:
+            risk_delta += 0.04
+        else:
+            risk_delta -= 0.02
+
+        # Sigara / Alkol
         if smoke == 1:
-            adjustment += 0.10
+            risk_delta += 0.10
+        else:
+            risk_delta -= 0.05
 
-        # Düzenli alkol kullanıyorsa +0.06
         if alco == 1:
-            adjustment += 0.06
+            risk_delta += 0.05
+        else:
+            risk_delta -= 0.02
 
-        # Sigara yok, alkol yok ve kişi aktif ise hafif koruyucu etki
-        if smoke == 0 and alco == 0 and active == 1:
-            adjustment -= 0.03
+        # Fiziksel aktivite koruyucu
+        if active == 1:
+            risk_delta -= 0.06
+        else:
+            risk_delta += 0.04
 
-        # Ayarlanmış olasılık
-        prob = float(np.clip(prob_raw + adjustment, 0.0, 1.0))
+        # Aşırı BMI
+        if bmi >= 30:
+            risk_delta += 0.06
+        elif bmi < 18.5:
+            risk_delta += 0.03
+
+        # Düzeltmeleri uygula ve 0–1 arasında tut
+        prob = np.clip(base_prob + risk_delta, 0.01, 0.99)
         risk_yuzde = prob * 100
 
-        # Sınıf tahminini de ayarlanmış olasılığa göre yap
+        # Sınıf kararı: 0.5 eşiği
         pred = int(prob >= 0.5)
 
         if pred == 1:
@@ -289,11 +336,13 @@ with left_col:
         st.markdown(
             """
             <div class='tech-note'>
-            <b>Teknik Açıklama:</b> Gösterilen olasılık, eğitilmiş topluluk modelinden elde edilen
-            ham tahmine ek olarak, literatürde kardiyovasküler risk ile güçlü ilişkisi bilinen
-            sigara ve düzenli alkol kullanımı için küçük düzeltmeler içerir. Bu çıktı,
-            klinik kararı desteklemek için tasarlanmış bir karar destek sistemidir; tek başına
-            tanı veya tedavi kararında kullanılmamalıdır.
+            <b>Teknik Açıklama:</b> Olasılık, eğitim veri setinde oluşturulan topluluk
+            modelinin (lojistik regresyon + random forest + XGBoost) gözleme benzer bireylerin
+            sınıf dağılımına dayalı tahminidir. Bu çıktıya, sigara, alkol, kolesterol,
+            glukoz ve fiziksel aktivite için küçük ağırlıklı düzeltmeler eklenmiştir; böylece
+            risk faktörlerindeki değişiklikler model çıktısına daha belirgin yansımaktadır.
+            Çıktı, klinik kararı desteklemek için tasarlanmış bir karar destek sistemidir;
+            tek başına tanı veya tedavi kararında kullanılmamalıdır.
             </div>
             """,
             unsafe_allow_html=True,
@@ -308,9 +357,9 @@ with right_col:
         <div class="info-card">
             <h4>📊 Kullanılan Veri Seti</h4>
             <ul>
-                <li><b>Kaynak:</b> Cardio Vascular Disease veri seti</li>
+                <li><b>Kaynak:</b> Cardio Vascular Disease (Kaggle) veri seti</li>
                 <li><b>Gözlem sayısı:</b> ~70.000 birey</li>
-                <li><b>Değişkenler:</b> yaş, cinsiyet, boy, kilo, kan basıncı (sistolik/diyastolik),
+                <li><b>Değişkenler:</b> yaş, cinsiyet, boy, kilo, kan basıncı (sistolik/diastolik),
                     kolesterol, glikoz, sigara ve alkol kullanımı, fiziksel aktivite vb.</li>
                 <li><b>Hedef değişken:</b> <code>cardio</code> (0 = hastalık yok, 1 = kardiyovasküler hastalık var)</li>
             </ul>
@@ -326,9 +375,12 @@ with right_col:
             <ul>
                 <li>Olası aykırı ve tutarsız değerler (özellikle kan basıncı kombinasyonları)
                     veri keşfi aşamasında incelenmiş ve uygun eşiklerle filtrelenmiştir.</li>
-                <li>Kayıp değerler, değişkenin dağılımına göre <i>akıllı imputasyon</i> yaklaşımlarıyla ele alınmıştır.</li>
-                <li>Sürekli değişkenler gerektiğinde ölçeklendirilmiş, kategorik değişkenler uygun şekilde kodlanmıştır.</li>
-                <li>Model başarısı, eğitim/test ayrımı ve sınıf dengesine duyarlı istatistiklerle izlenmiştir.</li>
+                <li>Kayıp değerler, değişken dağılımına göre akıllı imputasyon yöntemleriyle
+                    (ortalama/medyan veya benzer gözlemler) tamamlanmıştır.</li>
+                <li>Sürekli değişkenler gerektiğinde ölçeklendirilmiş, kategorik değişkenler
+                    uygun dummy kodlama ile modele verilmiştir.</li>
+                <li>Model performansı eğitim/test ayrımı ve sınıf dengesine duyarlı metriklerle
+                    (accuracy, recall, F1, ROC-AUC) değerlendirilmiştir.</li>
             </ul>
         </div>
         """,
@@ -338,13 +390,19 @@ with right_col:
     st.markdown(
         """
         <div class="info-card">
-            <h4>🧠 Kullanılan Modeller</h4>
+            <h4>🧠 Kullanılan Yapay Zekâ Modelleri</h4>
             <ul>
-                <li><b>Lojistik Regresyon:</b> Temel risk faktörlerinin doğrusal etkisini yakalar.</li>
-                <li><b>Karar Ağaçları / Random Forest:</b> Değişkenler arası doğrusal olmayan etkileşimleri ve eşik etkilerini modeller.</li>
-                <li><b>XGBoost:</b> Gradyan artırmalı karar ağaçları ile daha ince ayrımlar yapar ve hatayı kademeli olarak azaltır.</li>
-                <li>Bu üç modelin çıktıları, bir <b>ensemble (topluluk) oylama</b> yapısında birleştirilerek daha kararlı ve
-                    genellenebilir tahminler elde edilmiştir.</li>
+                <li><b>Lojistik Regresyon:</b> Doğrusal bir olasılık modeli; her risk faktörünün
+                    kardiyovasküler hastalık olasılığı üzerindeki marjinal etkisini katsayılar
+                    üzerinden yorumlamaya imkân verir.</li>
+                <li><b>Random Forest (Karar Ağaçları Kümesi):</b> Birden çok karar ağacının
+                    bootstrap örnekler üzerinde eğitilip oy vererek karar aldığı bir topluluk
+                    algoritması; doğrusal olmayan ilişkileri ve değişken etkileşimlerini yakalar.</li>
+                <li><b>XGBoost:</b> Gradyan artırmalı karar ağaçları algoritması; hatayı adım adım
+                    azaltarak özellikle karmaşık örüntüleri yakalamada güçlü bir yöntemdir.</li>
+                <li>Bu üç modelin çıktıları, <b>soft voting</b> ile birleştirilmiş; her modelin
+                    tahmin ettiği olasılıkların ortalaması alınarak daha kararlı ve genellenebilir
+                    bir topluluk tahmini üretilmiştir.</li>
             </ul>
         </div>
         """,
@@ -359,9 +417,9 @@ with right_col:
                 <li><b>Doğruluk (Accuracy):</b> ≈ 0.74</li>
                 <li><b>Duyarlılık (Recall):</b> ≈ 0.70 (hastalığı olan bireyi yakalama oranı)</li>
                 <li><b>F1 Skoru:</b> ≈ 0.72 (dengeli ortalama)</li>
-                <li><b>ROC-AUC:</b> ≈ 0.80 (ayrıştırma gücü)</li>
-                <li>Bu değerler, modelin sınıflar arasındaki ayrımı istatistiksel olarak anlamlı bir düzeyde
-                    öğrendiğini göstermektedir.</li>
+                <li><b>ROC-AUC:</b> ≈ 0.80 (modelin hasta ve sağlıklı bireyleri ayırt etme gücü)</li>
+                <li>Bu değerler, modelin sınıflar arasındaki ayrımı istatistiksel olarak anlamlı
+                    bir düzeyde öğrendiğini göstermektedir.</li>
             </ul>
         </div>
         """,
